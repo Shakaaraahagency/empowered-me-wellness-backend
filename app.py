@@ -182,7 +182,8 @@ def ensure_database(app):
             print("Database created and migrations applied.")
 
 
+app = create_app()
+
 if __name__ == "__main__":
-    app = create_app()
     ensure_database(app)
     app.run(debug=app.config.get("DEBUG", False), port=5000)

@@ -1,4 +1,9 @@
 import sys
+from dotenv import load_dotenv
+
+# Load environment variables before doing anything else
+load_dotenv()
+
 from app import create_app
 from extensions import db
 from models.user import User

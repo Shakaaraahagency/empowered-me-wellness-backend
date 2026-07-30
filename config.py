@@ -21,7 +21,10 @@ class Config:
         _raw_db_url = _raw_db_url.replace("postgres://", "postgresql://", 1)
     SQLALCHEMY_DATABASE_URI = _raw_db_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_recycle": 1800,
+    }
     # --- JWT ---
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
     JWT_TOKEN_LOCATION = ["cookies"]

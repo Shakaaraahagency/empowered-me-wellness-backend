@@ -3,7 +3,7 @@ from app import create_app
 from extensions import db
 from models.user import User
 
-def create_or_promote_admin(email, password=None, first_name="Admin", last_name="User"):
+def create_or_promote_admin(email, password=None, full_name="Admin User"):
     app = create_app()
     with app.app_context():
         email_clean = email.strip().lower()
@@ -18,13 +18,12 @@ def create_or_promote_admin(email, password=None, first_name="Admin", last_name=
         else:
             if not password:
                 print(f"Error: User '{email_clean}' does not exist. Please provide a password to create the account.")
-                print("Usage: python create_admin.py <email> <password> [first_name] [last_name]")
+                print("Usage: python create_admin.py <email> <password> [full_name]")
                 sys.exit(1)
             
             new_user = User(
                 email=email_clean,
-                first_name=first_name,
-                last_name=last_name,
+                full_name=full_name,
                 role="admin"
             )
             new_user.set_password(password)
@@ -34,12 +33,11 @@ def create_or_promote_admin(email, password=None, first_name="Admin", last_name=
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python create_admin.py <email> [password] [first_name] [last_name]")
+        print("Usage: python create_admin.py <email> [password] [full_name]")
         sys.exit(1)
     
     email_arg = sys.argv[1]
     pass_arg = sys.argv[2] if len(sys.argv) > 2 else None
-    fname_arg = sys.argv[3] if len(sys.argv) > 3 else "Admin"
-    lname_arg = sys.argv[4] if len(sys.argv) > 4 else "User"
+    fname_arg = sys.argv[3] if len(sys.argv) > 3 else "Admin User"
     
-    create_or_promote_admin(email_arg, pass_arg, fname_arg, lname_arg)
+    create_or_promote_admin(email_arg, pass_arg, fname_arg)

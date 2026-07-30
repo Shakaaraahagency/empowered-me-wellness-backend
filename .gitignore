@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+*.db
+.venv/
+venv/
+instance/
+.DS_Store
+# Real product files go here in production via secure upload, not git.
+# The folder itself is tracked (via .gitkeep) but its contents aren't.
+protected_files/*
+!protected_files/.gitkeep

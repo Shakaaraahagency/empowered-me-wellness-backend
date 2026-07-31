@@ -33,7 +33,10 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=20)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)
     JWT_COOKIE_SECURE = os.environ.get("FLASK_ENV") == "production"
-    JWT_COOKIE_SAMESITE = "Lax"
+    # SameSite=None required for cross-origin cookies (Hostinger frontend → Render backend).
+    # Browsers block SameSite=Lax cookies on cross-site fetch requests.
+    # SameSite=None MUST be paired with Secure=True (HTTPS), which Render provides.
+    JWT_COOKIE_SAMESITE = "None" if os.environ.get("FLASK_ENV") == "production" else "Lax"
     JWT_COOKIE_CSRF_PROTECT = True
     JWT_ACCESS_COOKIE_PATH = "/api/v1/"
     JWT_REFRESH_COOKIE_PATH = "/api/v1/auth/refresh"

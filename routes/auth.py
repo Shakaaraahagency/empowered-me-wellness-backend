@@ -112,7 +112,14 @@ def login():
     access_token = create_access_token(identity=user.id, additional_claims={"role": user.role})
     refresh_token = create_refresh_token(identity=user.id)
 
-    resp = jsonify({"id": user.id, "email": user.email, "full_name": user.full_name})
+    from flask_jwt_extended import get_csrf_token
+    resp = jsonify({
+        "id": user.id, 
+        "email": user.email, 
+        "full_name": user.full_name,
+        "csrf_access": get_csrf_token(access_token),
+        "csrf_refresh": get_csrf_token(refresh_token)
+    })
     set_access_cookies(resp, access_token)
     set_refresh_cookies(resp, refresh_token)
 
@@ -135,7 +142,12 @@ def refresh():
         return _error("Account not found.", "not_found", 404)
 
     new_access = create_access_token(identity=user.id, additional_claims={"role": user.role})
-    resp = jsonify({"refreshed": True})
+    
+    from flask_jwt_extended import get_csrf_token
+    resp = jsonify({
+        "refreshed": True,
+        "csrf_access": get_csrf_token(new_access)
+    })
     set_access_cookies(resp, new_access)
 
     from flask_jwt_extended import decode_token

@@ -11,6 +11,8 @@ class Config:
 
     # --- Core Flask ---
     SECRET_KEY = os.environ.get("SECRET_KEY")
+    ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL")
+    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
     # --- Database ---
     # Render provides DATABASE_URL for its managed Postgres instances.

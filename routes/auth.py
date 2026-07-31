@@ -83,12 +83,31 @@ def login():
     email = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
 
-    user = User.query.filter_by(email=email).first()
+    from flask import current_app
+    env_admin_email = current_app.config.get("ADMIN_EMAIL")
+    env_admin_pass = current_app.config.get("ADMIN_PASSWORD")
 
-    # Same error whether the email doesn't exist or the password is wrong —
-    # don't let a login form confirm which emails are registered.
-    if not user or not user.check_password(password):
-        return _error("Invalid email or password.", "invalid_credentials", 401)
+    user = None
+
+    # Auto-provision or update env-based admin on login
+    if env_admin_email and env_admin_pass and email == env_admin_email.strip().lower() and password == env_admin_pass:
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            user = User(email=email, full_name="System Admin", role="admin")
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+        else:
+            # If they exist but the password/role is out of sync with env, force sync it
+            if user.role != "admin" or not user.check_password(password):
+                user.role = "admin"
+                user.set_password(password)
+                db.session.commit()
+    else:
+        # Standard login flow
+        user = User.query.filter_by(email=email).first()
+        if not user or not user.check_password(password):
+            return _error("Invalid email or password.", "invalid_credentials", 401)
 
     access_token = create_access_token(identity=user.id, additional_claims={"role": user.role})
     refresh_token = create_refresh_token(identity=user.id)

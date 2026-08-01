@@ -79,6 +79,9 @@ class Config:
     # somewhere other than "nobody noticed until a client complained."
     SENTRY_DSN = os.environ.get("SENTRY_DSN")
 
+    # --- Cloudinary (File Storage) ---
+    CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL")
+
 
 class DevConfig(Config):
     DEBUG = True

@@ -64,6 +64,12 @@ def create_app():
         supports_credentials=True,
     )
 
+    if app.config.get("CLOUDINARY_URL"):
+        import cloudinary
+        # The cloudinary package automatically reads CLOUDINARY_URL from the
+        # environment, but we can explicitly configure it to enforce secure URLs.
+        cloudinary.config(secure=True)
+
     # --- models must be imported before creating tables / running migrations ---
     from models.user import User, TokenBlocklist  # noqa: F401
     from models.contact_message import ContactMessage  # noqa: F401

@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request
@@ -177,16 +178,17 @@ def download_file(token):
     if not product:
         return _error("File not found.", "not_found", 404)
 
-    import os
+    import cloudinary.utils
+    from flask import redirect
     try:
-        path = resolve_file_path(product.file_path)
-    except ValueError:
-        return _error("Invalid file reference.", "invalid_file", 400)
-
-    if not os.path.exists(path):
-        return _error("The requested file is currently unavailable on the server.", "file_not_found", 404)
-
-    try:
-        return send_file(path, as_attachment=True, download_name=f"{product.name}.pdf")
-    except Exception:
-        return _error("Could not send the file. Please contact support.", "download_failed", 500)
+        # Generate a signed URL valid for 1 hour (3600 seconds)
+        signed_url = cloudinary.utils.cloudinary_url(
+            product.file_path,
+            resource_type="raw",
+            type="authenticated",
+            sign_url=True,
+            expires_at=int(datetime.now(timezone.utc).timestamp()) + 3600
+        )[0] # cloudinary_url returns a tuple (url, options)
+        return redirect(signed_url)
+    except Exception as e:
+        return _error(f"Could not generate secure download link: {str(e)}", "download_failed", 500)

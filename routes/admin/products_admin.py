@@ -47,15 +47,19 @@ def upload_product_file():
     if size > MAX_FILE_SIZE:
         return _error("File size exceeds 50MB limit.", "file_too_large", 400)
 
-    # Save to protected files directory with a unique name
-    safe_filename = f"{uuid.uuid4().hex}_{original_filename}"
-    protected_dir = os.path.abspath(current_app.config["PROTECTED_FILES_DIR"])
-    os.makedirs(protected_dir, exist_ok=True)
-
-    save_path = os.path.join(protected_dir, safe_filename)
-    uploaded_file.save(save_path)
-
-    return jsonify({"file_path": safe_filename, "filename": original_filename}), 200
+    import cloudinary.uploader
+    try:
+        result = cloudinary.uploader.upload(
+            uploaded_file,
+            folder="protected_books",
+            resource_type="raw",
+            type="authenticated",
+            public_id=f"{uuid.uuid4().hex}_{original_filename}"
+        )
+        file_path = result.get("public_id")
+        return jsonify({"file_path": file_path, "filename": original_filename}), 200
+    except Exception as e:
+        return _error(f"Cloudinary upload failed: {str(e)}", "upload_failed", 500)
 
 
 @products_admin_bp.route("/upload-cover", methods=["POST"])
@@ -81,15 +85,18 @@ def upload_product_cover():
     if size > 5 * 1024 * 1024:
         return _error("Image size exceeds 5MB limit.", "file_too_large", 400)
 
-    # Save to public covers directory with a unique name
-    safe_filename = f"{uuid.uuid4().hex}_{original_filename}"
-    public_dir = os.path.join(current_app.root_path, "public", "covers")
-    os.makedirs(public_dir, exist_ok=True)
-
-    save_path = os.path.join(public_dir, safe_filename)
-    uploaded_file.save(save_path)
-
-    return jsonify({"url": f"/public/covers/{safe_filename}", "filename": original_filename}), 200
+    import cloudinary.uploader
+    try:
+        # We don't specify resource_type="raw" here because images should be treated as images
+        result = cloudinary.uploader.upload(
+            uploaded_file, 
+            folder="covers",
+            public_id=f"{uuid.uuid4().hex}_{original_filename.split('.')[0]}"
+        )
+        url = result.get("secure_url")
+        return jsonify({"url": url, "filename": original_filename}), 200
+    except Exception as e:
+        return _error(f"Cloudinary upload failed: {str(e)}", "upload_failed", 500)
 @products_admin_bp.route("", methods=["GET"])
 @admin_required
 def list_products_admin():

@@ -13,3 +13,4 @@ stripe==15.3.1
 itsdangerous==2.2.0
 resend==2.34.0
 sentry-sdk[flask]==2.66.0
+cloudinary==1.41.0

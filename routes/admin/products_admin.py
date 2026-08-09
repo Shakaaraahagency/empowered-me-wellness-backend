@@ -97,6 +97,8 @@ def upload_product_cover():
         return jsonify({"url": url, "filename": original_filename}), 200
     except Exception as e:
         return _error(f"Cloudinary upload failed: {str(e)}", "upload_failed", 500)
+
+
 @products_admin_bp.route("", methods=["GET"])
 @admin_required
 def list_products_admin():
@@ -111,12 +113,17 @@ def create_product():
     name = (data.get("name") or "").strip()
     price = data.get("price")
     file_path = (data.get("file_path") or "").strip(" '\"")
+    is_coming_soon = bool(data.get("is_coming_soon", False))
+    release_date = data.get("release_date")
 
     if not name:
         return _error("Product name is required.", "invalid_name", 400)
     if price is None or float(price) < 0:
         return _error("A valid price is required.", "invalid_price", 400)
-    if not file_path:
+        
+    if is_coming_soon:
+        file_path = file_path or None
+    elif not file_path:
         return _error("file_path is required.", "invalid_file_path", 400)
 
     p = Product(
@@ -126,6 +133,8 @@ def create_product():
         category=data.get("category", "ebook"),
         file_path=file_path,
         cover_image_url=data.get("cover_image_url"),
+        is_coming_soon=is_coming_soon,
+        release_date=release_date,
     )
     db.session.add(p)
     db.session.commit()
@@ -157,6 +166,17 @@ def update_product(product_id):
         p.cover_image_url = data.get("cover_image_url")
     if "is_active" in data:
         p.is_active = bool(data.get("is_active"))
+    if "category" in data:
+        p.category = data.get("category")
+    if "release_date" in data:
+        p.release_date = data.get("release_date")
+    if "is_coming_soon" in data:
+        new_is_coming_soon = bool(data.get("is_coming_soon"))
+        if p.is_coming_soon and not new_is_coming_soon:
+            # Switching from coming soon to live
+            if not p.file_path and not ("file_path" in data and data.get("file_path")):
+                return _error("Cannot switch from coming-soon to live without a product file. Upload the file first.", "missing_file", 400)
+        p.is_coming_soon = new_is_coming_soon
 
     db.session.commit()
     return jsonify(serialize_product(p, detail=True)), 200
@@ -173,3 +193,67 @@ def delete_product(product_id):
     p.is_active = False
     db.session.commit()
     return jsonify({"deactivated": True}), 200
+
+
+@products_admin_bp.route("/<product_id>/release", methods=["POST"])
+@admin_required
+def release_product(product_id):
+    """Release a coming-soon product: attach the file, flip is_coming_soon
+    to False, and email every subscriber who signed up via 'Notify Me'."""
+    from models.product_notification import ProductNotification
+    from services.email_service import send_product_release_notification
+    import logging
+
+    logger = logging.getLogger("emw")
+
+    p = Product.query.get(product_id)
+    if not p:
+        return _error("Product not found.", "not_found", 404)
+
+    if not p.is_coming_soon:
+        return _error("This product is already released.", "already_released", 400)
+
+    # --- Accept file_path from JSON body (file was uploaded via /upload first) ---
+    data = request.get_json(silent=True) or {}
+    file_path = (data.get("file_path") or "").strip(" '\"")
+
+    if not file_path:
+        return _error(
+            "A product file is required to release. Upload the file first via /upload.",
+            "missing_file",
+            400,
+        )
+
+    # Update the product
+    p.file_path = file_path
+    p.is_coming_soon = False
+    db.session.commit()
+
+    # --- Send notification emails to all subscribers ---
+    subscribers = ProductNotification.query.filter_by(product_id=p.id).all()
+    frontend_base = current_app.config.get("FRONTEND_BASE_URL", "http://127.0.0.1:5500")
+    shop_url = f"{frontend_base}/product-detail.html?id={p.id}"
+
+    sent_count = 0
+    for sub in subscribers:
+        try:
+            send_product_release_notification(
+                email=sub.email,
+                product_name=p.name,
+                shop_url=shop_url,
+            )
+            sent_count += 1
+        except Exception:
+            logger.exception("Failed to send release notification to %s", sub.email)
+
+    # Clean up: remove the notification sign-ups since the product is live now
+    ProductNotification.query.filter_by(product_id=p.id).delete()
+    db.session.commit()
+
+    return jsonify({
+        "released": True,
+        "product": serialize_product(p, detail=True),
+        "notifications_sent": sent_count,
+        "total_subscribers": len(subscribers),
+    }), 200
+

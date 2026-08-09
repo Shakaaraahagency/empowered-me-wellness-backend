@@ -82,6 +82,7 @@ def create_app():
     from models.testimonial import Testimonial  # noqa: F401
     from models.blog_post import BlogPost  # noqa: F401
     from models.newsletter import NewsletterSubscriber  # noqa: F401
+    from models.product_notification import ProductNotification  # noqa: F401
 
     # --- JWT blocklist check: this is what makes logout a real revocation ---
     @jwt.token_in_blocklist_loader

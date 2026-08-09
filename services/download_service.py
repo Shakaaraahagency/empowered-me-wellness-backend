@@ -34,14 +34,14 @@ def verify_download_token(token: str) -> dict:
 
 def resolve_file_path(relative_path: str) -> str:
     """Resolves a product's stored file_path against the protected files
-    directory or validates an absolute path. Guards against path traversal."""
+    directory. Always contained within PROTECTED_FILES_DIR — there is no
+    escape hatch for absolute paths, even ones that exist on disk, because
+    admins can type this value into a plain text field and it should never
+    be trusted to point anywhere outside the sandboxed directory."""
     if not relative_path:
         raise ValueError("Empty file path.")
 
     clean_path = relative_path.strip(" '\"")
-
-    if os.path.isabs(clean_path) and os.path.exists(clean_path):
-        return os.path.abspath(clean_path)
 
     base = os.path.abspath(current_app.config["PROTECTED_FILES_DIR"])
     full = os.path.abspath(os.path.join(base, clean_path))

@@ -120,3 +120,32 @@ def send_password_reset(email: str, reset_link: str) -> None:
         <p>If you didn't request this, you can safely ignore this email.</p>
         """,
     )
+
+
+def send_product_release_notification(email: str, product_name: str, shop_url: str) -> None:
+    """Notify a subscriber that a coming-soon product is now available."""
+    _send(
+        to=email,
+        subject=f"'{product_name}' is now available — Empowered Me Wellness",
+        html=f"""
+        <div style="font-family: 'Lato', Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #241C13;">
+          <p style="font-size: 18px; line-height: 1.6;">Great news!</p>
+          <p style="font-size: 16px; line-height: 1.6;">
+            <strong>{product_name}</strong> is now available for purchase.
+            You asked to be notified when it launched — here it is!
+          </p>
+          <p style="margin: 28px 0;">
+            <a href="{shop_url}"
+               style="display: inline-block; padding: 14px 32px; background: #B05535;
+                      color: #F2EDE0; text-decoration: none; border-radius: 10px;
+                      font-weight: 600; font-size: 16px;">
+              Get Your Copy
+            </a>
+          </p>
+          <p style="font-size: 14px; color: #888;">
+            — Empowered Me Wellness
+          </p>
+        </div>
+        """,
+    )
+

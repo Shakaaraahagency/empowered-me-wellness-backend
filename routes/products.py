@@ -73,3 +73,46 @@ def submit_product_review(product_id):
     db.session.commit()
     
     return jsonify({"success": True}), 201
+
+
+@products_bp.route("/<product_id>/notify-me", methods=["POST"])
+def notify_me(product_id):
+    from flask import request
+    from extensions import db
+    from models.product_notification import ProductNotification
+    import re
+
+    product = Product.query.get(product_id)
+    if not product or not product.is_active:
+        return jsonify({"error": {"message": "Product not found.", "code": "not_found"}}), 404
+    
+    if not product.is_coming_soon:
+        return jsonify({"error": {"message": "Product is already available.", "code": "invalid_product"}}), 400
+
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+
+    if not email or not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return jsonify({"error": {"message": "A valid email address is required.", "code": "invalid_email"}}), 400
+
+    if len(email) > 255:
+        return jsonify({"error": {"message": "Email address is too long.", "code": "invalid_email"}}), 400
+
+    # Check if already subscribed for this specific product
+    existing = ProductNotification.query.filter_by(
+        product_id=product_id, email=email
+    ).first()
+
+    if existing:
+        # Already signed up — return success silently
+        return jsonify({"success": True}), 200
+
+    notification = ProductNotification(
+        product_id=product_id,
+        email=email,
+    )
+    db.session.add(notification)
+    db.session.commit()
+    
+    return jsonify({"success": True}), 200
+

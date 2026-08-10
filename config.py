@@ -1,5 +1,9 @@
 import os
 from datetime import timedelta
+from dotenv import load_dotenv
+
+# Load .env file automatically if present
+load_dotenv()
 
 
 class Config:

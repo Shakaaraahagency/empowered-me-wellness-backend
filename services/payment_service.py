@@ -14,7 +14,8 @@ class PaymentError(Exception):
 
 
 def _stripe_configured() -> bool:
-    return bool(current_app.config.get("STRIPE_SECRET_KEY"))
+    key = (current_app.config.get("STRIPE_SECRET_KEY") or "").strip()
+    return bool(key and key.startswith("sk_"))
 
 
 def create_checkout_session(order, success_url: str, cancel_url: str) -> dict:

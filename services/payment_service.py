@@ -153,6 +153,46 @@ def create_booking_checkout_session(booking, success_url: str, cancel_url: str) 
     return {"checkout_url": checkout_session.url, "simulated": False}
 
 
+def verify_and_confirm_booking_payment(booking_id: str, checkout_session_id: str = None):
+    """
+    Verifies that a paid session booking has completed payment via Stripe
+    (or dev simulation) and confirms the booking status if paid.
+    """
+    from models.booking import Booking
+    from extensions import db
+
+    booking = Booking.query.get(booking_id)
+    if not booking:
+        return None
+
+    if booking.status == "confirmed":
+        return booking
+
+    should_confirm = False
+
+    if _stripe_configured() and checkout_session_id:
+        stripe.api_key = current_app.config["STRIPE_SECRET_KEY"].strip()
+        try:
+            sess = stripe.checkout.Session.retrieve(checkout_session_id)
+            if sess.payment_status in ("paid", "no_payment_required"):
+                should_confirm = True
+        except Exception:
+            logger.exception("Failed to verify Stripe session %s", checkout_session_id)
+    elif not _stripe_configured():
+        should_confirm = True
+
+    if should_confirm:
+        booking.status = "confirmed"
+        db.session.commit()
+        try:
+            from services.email_service import send_booking_confirmation
+            send_booking_confirmation(booking)
+        except Exception:
+            logger.exception("Confirmation email failed for verified booking %s", booking.id)
+
+    return booking
+
+
 def verify_webhook_signature(payload: bytes, sig_header: str) -> dict:
     """Verifies a Stripe webhook signature and returns the parsed event.
     Raises PaymentError on failure. This is pure local HMAC verification —

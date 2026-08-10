@@ -18,11 +18,24 @@ def get_overview_stats():
         ).count()
     )
 
-    revenue_this_month = (
+    product_revenue = (
         db.session.query(func.coalesce(func.sum(Order.total_amount), 0))
-        .filter(Order.status == "paid", Order.paid_at >= month_start.replace(tzinfo=None))
+        .filter(Order.status == "paid", Order.created_at >= month_start.replace(tzinfo=None))
         .scalar()
     )
+
+    booking_revenue = (
+        db.session.query(func.coalesce(func.sum(Session.price), 0))
+        .join(Booking, Booking.session_id == Session.id)
+        .filter(
+            Booking.status == "confirmed",
+            Booking.created_at >= month_start.replace(tzinfo=None),
+            Session.price.isnot(None),
+        )
+        .scalar()
+    )
+
+    total_revenue = float(product_revenue or 0) + float(booking_revenue or 0)
 
     upcoming_sessions = Session.query.filter(
         Session.status == "scheduled", Session.start_time >= now.replace(tzinfo=None)
@@ -46,7 +59,7 @@ def get_overview_stats():
 
     return {
         "bookings_this_month": bookings_this_month,
-        "revenue_this_month": str(revenue_this_month),
+        "revenue_this_month": f"{total_revenue:.2f}",
         "upcoming_sessions": upcoming_sessions,
         "top_classes": [{"name": name, "bookings": count} for name, count in top_classes],
         "pending_contact_messages": pending_contact_messages,

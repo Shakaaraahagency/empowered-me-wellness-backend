@@ -1,7 +1,10 @@
+import os
+import uuid
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request
+from werkzeug.utils import secure_filename
 
 from extensions import db
 from models.blog_post import BlogPost, slugify
@@ -25,6 +28,56 @@ def _unique_slug(title: str, exclude_id=None) -> str:
             return slug
         slug = f"{base}-{n}"
         n += 1
+
+
+@blog_admin_bp.route("/upload-media", methods=["POST"])
+@admin_required
+def upload_blog_media():
+    """Upload an image or short video clip for use in blog posts."""
+    if "file" not in request.files:
+        return _error("No file was uploaded.", "missing_file", 400)
+
+    uploaded_file = request.files["file"]
+    if not uploaded_file or not uploaded_file.filename:
+        return _error("No file selected.", "empty_file", 400)
+
+    original_filename = secure_filename(uploaded_file.filename) or "media.png"
+    ext = os.path.splitext(original_filename)[1].lower()
+
+    IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+    VIDEO_EXTS = {".mp4", ".webm", ".mov"}
+
+    if ext not in IMAGE_EXTS and ext not in VIDEO_EXTS:
+        return _error(
+            "Only PNG, JPG, WEBP, GIF images and MP4, WEBM, MOV videos are allowed.",
+            "invalid_file_type", 400,
+        )
+
+    is_video = ext in VIDEO_EXTS
+    max_size = 50 * 1024 * 1024 if is_video else 5 * 1024 * 1024
+
+    uploaded_file.seek(0, os.SEEK_END)
+    size = uploaded_file.tell()
+    uploaded_file.seek(0)
+    if size > max_size:
+        limit_label = "50MB" if is_video else "5MB"
+        return _error(f"File size exceeds {limit_label} limit.", "file_too_large", 400)
+
+    import cloudinary.uploader
+    try:
+        upload_kwargs = {
+            "folder": "blog_media",
+            "public_id": f"{uuid.uuid4().hex}_{original_filename.split('.')[0]}",
+        }
+        if is_video:
+            upload_kwargs["resource_type"] = "video"
+
+        result = cloudinary.uploader.upload(uploaded_file, **upload_kwargs)
+        url = result.get("secure_url")
+        media_type = "video" if is_video else "image"
+        return jsonify({"url": url, "filename": original_filename, "type": media_type}), 200
+    except Exception as e:
+        return _error(f"Cloudinary upload failed: {str(e)}", "upload_failed", 500)
 
 
 @blog_admin_bp.route("", methods=["GET"])

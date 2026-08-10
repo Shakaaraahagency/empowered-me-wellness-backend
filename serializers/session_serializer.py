@@ -20,6 +20,7 @@ def serialize_session(s, detail=False):
         "spots_remaining": s.spots_remaining,
         "is_full": s.is_full,
         "status": s.status,
+        "image_url": s.image_url,
         "class_name": s.class_.name if s.class_ else None,
         "class_category": s.class_.category if s.class_ else None,
     }

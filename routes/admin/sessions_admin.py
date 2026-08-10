@@ -1,6 +1,9 @@
+import os
+import uuid
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request
+from werkzeug.utils import secure_filename
 
 from extensions import db
 from models.class_ import Class, Session
@@ -74,12 +77,44 @@ def delete_class(class_id):
     c = Class.query.get(class_id)
     if not c:
         return _error("Class not found.", "not_found", 404)
-    # Soft delete via is_active — a class with historical sessions/bookings
-    # attached shouldn't be hard-deleted, same record-keeping principle as
-    # account anonymization.
     c.is_active = False
     db.session.commit()
     return jsonify({"deactivated": True}), 200
+
+
+@sessions_admin_bp.route("/sessions/upload-image", methods=["POST"])
+@admin_required
+def upload_session_image():
+    if "file" not in request.files:
+        return _error("No file was uploaded.", "missing_file", 400)
+
+    uploaded_file = request.files["file"]
+    if not uploaded_file or not uploaded_file.filename:
+        return _error("No file selected.", "empty_file", 400)
+
+    original_filename = secure_filename(uploaded_file.filename) or "event.png"
+    ext = os.path.splitext(original_filename)[1].lower()
+
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        return _error("Only PNG, JPG, WEBP, and GIF images are allowed.", "invalid_file_type", 400)
+
+    uploaded_file.seek(0, os.SEEK_END)
+    size = uploaded_file.tell()
+    uploaded_file.seek(0)
+    if size > 5 * 1024 * 1024:
+        return _error("Image size exceeds 5MB limit.", "file_too_large", 400)
+
+    import cloudinary.uploader
+    try:
+        result = cloudinary.uploader.upload(
+            uploaded_file,
+            folder="session_images",
+            public_id=f"{uuid.uuid4().hex}_{original_filename.split('.')[0]}"
+        )
+        url = result.get("secure_url")
+        return jsonify({"url": url, "filename": original_filename}), 200
+    except Exception as e:
+        return _error(f"Cloudinary upload failed: {str(e)}", "upload_failed", 500)
 
 
 # --- Sessions ---
@@ -123,6 +158,7 @@ def create_session():
         capacity=int(data.get("capacity", 12)),
         price=data.get("price"),
         status="scheduled",
+        image_url=data.get("image_url"),
     )
     db.session.add(s)
     db.session.commit()
@@ -157,6 +193,8 @@ def update_session(session_id):
         s.capacity = new_capacity
     if "price" in data:
         s.price = data.get("price")
+    if "image_url" in data:
+        s.image_url = data.get("image_url")
 
     db.session.commit()
     return jsonify(serialize_session(s, detail=True)), 200
@@ -165,8 +203,6 @@ def update_session(session_id):
 @sessions_admin_bp.route("/sessions/<session_id>/cancel", methods=["PATCH"])
 @admin_required
 def cancel_session(session_id):
-    """Cancels the session and every confirmed booking on it, notifying
-    each affected client via the centralized email service."""
     from services.email_service import send_cancellation_notice
 
     s = Session.query.get(session_id)

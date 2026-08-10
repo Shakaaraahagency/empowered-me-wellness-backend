@@ -36,6 +36,7 @@ class Session(db.Model):
     capacity = db.Column(db.Integer, nullable=False, default=12)
     price = db.Column(db.Numeric(10, 2), nullable=True)  # null = free
     status = db.Column(db.String(20), nullable=False, default="scheduled")  # scheduled/closed/cancelled
+    image_url = db.Column(db.String(500), nullable=True)  # event flyer / poster image
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     bookings = db.relationship("Booking", backref="session", lazy="dynamic")

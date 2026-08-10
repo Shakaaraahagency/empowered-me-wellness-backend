@@ -62,7 +62,29 @@ def create_booking_route():
     except BookingError as e:
         return _error(e.message, e.code, 409 if e.code == "session_full" else 400)
 
-    return jsonify(serialize_booking(booking)), 201
+    res = serialize_booking(booking)
+
+    # Check if session requires payment
+    session_model = booking.session
+    if session_model and session_model.price is not None and float(session_model.price) > 0:
+        from services.payment_service import create_session_booking_checkout_session, PaymentError
+
+        success_url = data.get("success_url") or f"https://empoweredmewellness.com/booking-confirmation.html?id={booking.id}"
+        cancel_url = data.get("cancel_url") or f"https://empoweredmewellness.com/session-detail.html?id={session_model.id}"
+
+        try:
+            payment_res = create_session_booking_checkout_session(
+                session_model,
+                booking,
+                customer_email=booking.contact_email(),
+                success_url=success_url,
+                cancel_url=cancel_url,
+            )
+            res["checkout_url"] = payment_res.get("checkout_url")
+        except PaymentError as e:
+            return _error(e.message, e.code, 503)
+
+    return jsonify(res), 201
 
 
 @bookings_bp.route("/mine", methods=["GET"])

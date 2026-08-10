@@ -97,13 +97,28 @@ def checkout_webhook():
     if event["type"] == "checkout.session.completed":
         from datetime import datetime, timezone
 
-        session = event["data"]["object"]
-        order_id = session.get("metadata", {}).get("order_id")
-        order = Order.query.get(order_id) if order_id else None
-        if order and order.status != "paid":
-            order.status = "paid"
-            order.paid_at = datetime.now(timezone.utc)
-            db.session.commit()
+        session_obj = event["data"]["object"]
+        metadata = session_obj.get("metadata", {})
+
+        if metadata.get("type") == "event_booking":
+            from models.booking import Booking
+            booking_id = metadata.get("booking_id")
+            booking = Booking.query.get(booking_id) if booking_id else None
+            if booking and booking.status != "confirmed":
+                booking.status = "confirmed"
+                db.session.commit()
+                try:
+                    from services.email_service import send_booking_confirmation
+                    send_booking_confirmation(booking)
+                except Exception:
+                    pass
+        else:
+            order_id = metadata.get("order_id")
+            order = Order.query.get(order_id) if order_id else None
+            if order and order.status != "paid":
+                order.status = "paid"
+                order.paid_at = datetime.now(timezone.utc)
+                db.session.commit()
 
     return jsonify({"received": True}), 200
 

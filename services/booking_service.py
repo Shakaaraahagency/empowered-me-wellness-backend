@@ -30,7 +30,10 @@ def create_booking(session_id: str, user=None, guest_info: dict | None = None) -
     if not user and not guest_info:
         raise BookingError("Booking requires either an account or guest details.", "missing_identity")
 
-    booking = Booking(session_id=session.id, status="confirmed")
+    is_paid = session.price is not None and float(session.price) > 0
+    initial_status = "pending_payment" if is_paid else "confirmed"
+
+    booking = Booking(session_id=session.id, status=initial_status)
     if user:
         booking.user_id = user.id
     else:
@@ -41,17 +44,16 @@ def create_booking(session_id: str, user=None, guest_info: dict | None = None) -
     db.session.add(booking)
     db.session.commit()
 
-    # Send confirmation email — wrapped in try/except so that a failure in the
-    # email layer (e.g. missing API key, network error, bad template) never
-    # rolls back or hides a booking that has already been committed to the DB.
-    try:
-        from services.email_service import send_booking_confirmation
-        send_booking_confirmation(booking)
-    except Exception:
-        import logging
-        logging.getLogger("emw").exception(
-            "Booking %s committed but confirmation email failed to send.", booking.id
-        )
+    # Send confirmation email for free sessions (paid sessions get email when payment completes)
+    if not is_paid:
+        try:
+            from services.email_service import send_booking_confirmation
+            send_booking_confirmation(booking)
+        except Exception:
+            import logging
+            logging.getLogger("emw").exception(
+                "Booking %s committed but confirmation email failed to send.", booking.id
+            )
 
     return booking
 

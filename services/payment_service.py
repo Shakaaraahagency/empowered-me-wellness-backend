@@ -86,6 +86,65 @@ def create_checkout_session(order, success_url: str, cancel_url: str) -> dict:
     return {"checkout_url": session.url, "simulated": False}
 
 
+def create_session_booking_checkout_session(session_model, booking, customer_email: str, success_url: str, cancel_url: str) -> dict:
+    """
+    Creates a Stripe Checkout Session for a paid class/event booking.
+    """
+    if current_app.config.get("FLASK_ENV") == "production" and not _stripe_configured():
+        raise PaymentError(
+            "Payments are not configured yet. Please try again later.",
+            "payments_not_configured",
+        )
+
+    if not _stripe_configured():
+        logger.warning(
+            "DEV-ONLY PAYMENT SIMULATION: Stripe is not configured, so booking %s "
+            "is being marked confirmed immediately without real payment.",
+            booking.id,
+        )
+        from extensions import db
+        booking.status = "confirmed"
+        db.session.commit()
+        return {"checkout_url": success_url, "simulated": True}
+
+    stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
+
+    price_in_cents = int(round(float(session_model.price) * 100))
+
+    line_items = [
+        {
+            "price_data": {
+                "currency": "usd",
+                "product_data": {
+                    "name": f"Event Registration: {session_model.title}",
+                    "description": session_model.description or f"Registration for {session_model.title}",
+                },
+                "unit_amount": price_in_cents,
+            },
+            "quantity": 1,
+        }
+    ]
+
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=line_items,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                "type": "event_booking",
+                "booking_id": str(booking.id),
+                "session_id": str(session_model.id),
+            },
+            customer_email=customer_email or None,
+        )
+    except stripe.error.StripeError as e:
+        logger.exception("Stripe checkout session creation failed for booking %s", booking.id)
+        raise PaymentError("Could not start checkout. Please try again.", "stripe_error") from e
+
+    return {"checkout_url": checkout_session.url, "simulated": False}
+
+
 def verify_webhook_signature(payload: bytes, sig_header: str) -> dict:
     """Verifies a Stripe webhook signature and returns the parsed event.
     Raises PaymentError on failure. This is pure local HMAC verification —

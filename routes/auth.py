@@ -162,17 +162,19 @@ def refresh():
 @jwt_required(optional=True, verify_type=False)
 def logout():
     """
-    Revokes the *current* token's jti server-side (whichever cookie was
-    presented) and clears cookies. Unsets cookies and succeeds even if the
-    token is expired or missing.
+    Revokes the current token's jti server-side if present and always clears cookies.
+    Making optional=True guarantees that even if a token is expired or missing,
+    the logout request still succeeds with 200 and unsets all auth cookies.
     """
-    jwt_payload = get_jwt() or {}
-    jti = jwt_payload.get("jti")
-    if jti:
-        entry = TokenBlocklist.query.filter_by(jti=jti).first()
-        if entry:
-            entry.revoked = True
-            db.session.commit()
+    try:
+        jwt_payload = get_jwt()
+        if jwt_payload and "jti" in jwt_payload:
+            entry = TokenBlocklist.query.filter_by(jti=jwt_payload["jti"]).first()
+            if entry:
+                entry.revoked = True
+                db.session.commit()
+    except Exception:
+        pass
 
     resp = jsonify({"logged_out": True})
     unset_jwt_cookies(resp)

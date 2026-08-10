@@ -159,20 +159,20 @@ def refresh():
 
 
 @auth_bp.route("/logout", methods=["POST"])
-@jwt_required(verify_type=False)
+@jwt_required(optional=True, verify_type=False)
 def logout():
     """
     Revokes the *current* token's jti server-side (whichever cookie was
-    presented) and clears cookies. A refresh token that was already issued
-    and not presented here stays valid until it expires on its own — a
-    'log out everywhere' endpoint that revokes every jti for the user is a
-    P2 item, tracked in the PRD.
+    presented) and clears cookies. Unsets cookies and succeeds even if the
+    token is expired or missing.
     """
-    jwt_payload = get_jwt()
-    entry = TokenBlocklist.query.filter_by(jti=jwt_payload["jti"]).first()
-    if entry:
-        entry.revoked = True
-        db.session.commit()
+    jwt_payload = get_jwt() or {}
+    jti = jwt_payload.get("jti")
+    if jti:
+        entry = TokenBlocklist.query.filter_by(jti=jti).first()
+        if entry:
+            entry.revoked = True
+            db.session.commit()
 
     resp = jsonify({"logged_out": True})
     unset_jwt_cookies(resp)

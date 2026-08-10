@@ -70,11 +70,9 @@ def create_booking_route():
         success_url = data.get("success_url") or f"https://empoweredmewellness.com/booking-confirmation.html?id={booking.id}"
         cancel_url = data.get("cancel_url") or f"https://empoweredmewellness.com/session-detail.html?id={session_obj.id}"
 
-        # Ensure order/booking ID and Stripe session_id placeholder are in success URL
+        # Ensure order/booking ID is in success URL
         if "id=" not in success_url:
             success_url = f"{success_url}{'&' if '?' in success_url else '?'}id={booking.id}"
-        if "session_id=" not in success_url:
-            success_url = f"{success_url}&session_id={{CHECKOUT_SESSION_ID}}"
 
         try:
             result = create_booking_checkout_session(booking, success_url, cancel_url)
@@ -83,18 +81,6 @@ def create_booking_route():
             return _error(e.message, e.code, 503)
 
     return jsonify({"booking": serialize_booking(booking), "checkout_url": None}), 201
-
-
-@bookings_bp.route("/<booking_id>/confirm-payment", methods=["POST"])
-def confirm_booking_payment_route(booking_id):
-    data = request.get_json(silent=True) or {}
-    session_id = data.get("session_id") or request.args.get("session_id")
-    from services.payment_service import verify_and_confirm_booking_payment
-
-    booking = verify_and_confirm_booking_payment(booking_id, session_id)
-    if not booking:
-        return _error("Booking not found.", "not_found", 404)
-    return jsonify(serialize_booking(booking)), 200
 
 
 @bookings_bp.route("/mine", methods=["GET"])

@@ -31,7 +31,7 @@ def create_booking(session_id: str, user=None, guest_info: dict | None = None) -
         raise BookingError("Booking requires either an account or guest details.", "missing_identity")
 
     is_paid = session.price is not None and float(session.price) > 0
-    initial_status = "pending_payment" if is_paid else "confirmed"
+    initial_status = "pending" if is_paid else "confirmed"
 
     booking = Booking(session_id=session.id, status=initial_status)
     if user:
@@ -44,7 +44,8 @@ def create_booking(session_id: str, user=None, guest_info: dict | None = None) -
     db.session.add(booking)
     db.session.commit()
 
-    # Send confirmation email for free sessions (paid sessions get email when payment completes)
+    # Send confirmation email immediately only for free sessions.
+    # Paid sessions send email after Stripe payment completes via webhook.
     if not is_paid:
         try:
             from services.email_service import send_booking_confirmation

@@ -62,29 +62,25 @@ def create_booking_route():
     except BookingError as e:
         return _error(e.message, e.code, 409 if e.code == "session_full" else 400)
 
-    res = serialize_booking(booking)
-
-    # Check if session requires payment
-    session_model = booking.session
-    if session_model and session_model.price is not None and float(session_model.price) > 0:
-        from services.payment_service import create_session_booking_checkout_session, PaymentError
+    # Check if this booking requires payment
+    session_obj = booking.session
+    if session_obj.price is not None and float(session_obj.price) > 0:
+        from services.payment_service import create_booking_checkout_session, PaymentError
 
         success_url = data.get("success_url") or f"https://empoweredmewellness.com/booking-confirmation.html?id={booking.id}"
-        cancel_url = data.get("cancel_url") or f"https://empoweredmewellness.com/session-detail.html?id={session_model.id}"
+        cancel_url = data.get("cancel_url") or f"https://empoweredmewellness.com/session-detail.html?id={session_obj.id}"
+
+        # Ensure order/booking ID is in success URL
+        if "id=" not in success_url:
+            success_url = f"{success_url}{'&' if '?' in success_url else '?'}id={booking.id}"
 
         try:
-            payment_res = create_session_booking_checkout_session(
-                session_model,
-                booking,
-                customer_email=booking.contact_email(),
-                success_url=success_url,
-                cancel_url=cancel_url,
-            )
-            res["checkout_url"] = payment_res.get("checkout_url")
+            result = create_booking_checkout_session(booking, success_url, cancel_url)
+            return jsonify({"booking": serialize_booking(booking), "checkout_url": result["checkout_url"]}), 201
         except PaymentError as e:
             return _error(e.message, e.code, 503)
 
-    return jsonify(res), 201
+    return jsonify({"booking": serialize_booking(booking), "checkout_url": None}), 201
 
 
 @bookings_bp.route("/mine", methods=["GET"])

@@ -86,9 +86,10 @@ def create_checkout_session(order, success_url: str, cancel_url: str) -> dict:
     return {"checkout_url": session.url, "simulated": False}
 
 
-def create_session_booking_checkout_session(session_model, booking, customer_email: str, success_url: str, cancel_url: str) -> dict:
+def create_booking_checkout_session(booking, success_url: str, cancel_url: str) -> dict:
     """
-    Creates a Stripe Checkout Session for a paid class/event booking.
+    Returns {"checkout_url": ...}.
+    Creates a Stripe Checkout Session for a paid session booking.
     """
     if current_app.config.get("FLASK_ENV") == "production" and not _stripe_configured():
         raise PaymentError(
@@ -99,27 +100,34 @@ def create_session_booking_checkout_session(session_model, booking, customer_ema
     if not _stripe_configured():
         logger.warning(
             "DEV-ONLY PAYMENT SIMULATION: Stripe is not configured, so booking %s "
-            "is being marked confirmed immediately without real payment.",
+            "is being marked confirmed immediately without a real payment.",
             booking.id,
         )
         from extensions import db
+
         booking.status = "confirmed"
         db.session.commit()
+        try:
+            from services.email_service import send_booking_confirmation
+            send_booking_confirmation(booking)
+        except Exception:
+            logger.exception("Confirmation email failed for simulated booking payment %s", booking.id)
         return {"checkout_url": success_url, "simulated": True}
 
     stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
 
-    price_in_cents = int(round(float(session_model.price) * 100))
+    session_obj = booking.session
+    price_cents = int(float(session_obj.price) * 100)
 
     line_items = [
         {
             "price_data": {
                 "currency": "usd",
                 "product_data": {
-                    "name": f"Event Registration: {session_model.title}",
-                    "description": session_model.description or f"Registration for {session_model.title}",
+                    "name": f"Event Registration: {session_obj.title}",
+                    "description": f"Session on {session_obj.start_time.strftime('%b %d, %Y at %I:%M %p')}",
                 },
-                "unit_amount": price_in_cents,
+                "unit_amount": price_cents,
             },
             "quantity": 1,
         }
@@ -131,16 +139,15 @@ def create_session_booking_checkout_session(session_model, booking, customer_ema
             line_items=line_items,
             success_url=success_url,
             cancel_url=cancel_url,
-            metadata={
-                "type": "event_booking",
-                "booking_id": str(booking.id),
-                "session_id": str(session_model.id),
-            },
-            customer_email=customer_email or None,
+            metadata={"booking_id": str(booking.id)},
+            customer_email=booking.contact_email() or None,
         )
     except stripe.error.StripeError as e:
         logger.exception("Stripe checkout session creation failed for booking %s", booking.id)
         raise PaymentError("Could not start checkout. Please try again.", "stripe_error") from e
+
+    from extensions import db
+    db.session.commit()
 
     return {"checkout_url": checkout_session.url, "simulated": False}
 

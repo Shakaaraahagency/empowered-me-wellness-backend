@@ -97,28 +97,34 @@ def checkout_webhook():
     if event["type"] == "checkout.session.completed":
         from datetime import datetime, timezone
 
-        session_obj = event["data"]["object"]
-        metadata = session_obj.get("metadata", {})
+        session = event["data"]["object"]
+        metadata = session.get("metadata", {})
 
-        if metadata.get("type") == "event_booking":
+        # 1. Product Order Checkout
+        order_id = metadata.get("order_id")
+        if order_id:
+            order = Order.query.get(order_id)
+            if order and order.status != "paid":
+                order.status = "paid"
+                order.paid_at = datetime.now(timezone.utc)
+                db.session.commit()
+
+        # 2. Session Event Booking Checkout
+        booking_id = metadata.get("booking_id")
+        if booking_id:
             from models.booking import Booking
-            booking_id = metadata.get("booking_id")
-            booking = Booking.query.get(booking_id) if booking_id else None
-            if booking and booking.status != "confirmed":
+            booking = Booking.query.get(booking_id)
+            if booking and booking.status == "pending":
                 booking.status = "confirmed"
                 db.session.commit()
                 try:
                     from services.email_service import send_booking_confirmation
                     send_booking_confirmation(booking)
                 except Exception:
-                    pass
-        else:
-            order_id = metadata.get("order_id")
-            order = Order.query.get(order_id) if order_id else None
-            if order and order.status != "paid":
-                order.status = "paid"
-                order.paid_at = datetime.now(timezone.utc)
-                db.session.commit()
+                    import logging
+                    logging.getLogger("emw").exception(
+                        "Webhook confirmed booking %s but confirmation email failed.", booking.id
+                    )
 
     return jsonify({"received": True}), 200
 

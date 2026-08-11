@@ -99,18 +99,18 @@ def checkout_webhook():
         return _error(str(e), "webhook_verification_failed", 400)
 
     try:
-        if event.get("type") == "checkout.session.completed":
+        if event["type"] == "checkout.session.completed":
             from datetime import datetime, timezone
             import logging
             logger = logging.getLogger("emw")
 
-            session = event.get("data", {}).get("object", {})
+            session = event["data"]["object"]
             metadata = session.get("metadata") or {}
 
             # 1. Product Order Checkout
             order_id = metadata.get("order_id")
             if order_id:
-                order = db.session.get(Order, order_id) or Order.query.get(order_id)
+                order = Order.query.get(order_id)
                 if order and order.status != "paid":
                     order.status = "paid"
                     order.paid_at = datetime.now(timezone.utc)
@@ -121,7 +121,7 @@ def checkout_webhook():
             booking_id = metadata.get("booking_id")
             if booking_id:
                 from models.booking import Booking
-                booking = db.session.get(Booking, booking_id) or Booking.query.get(booking_id)
+                booking = Booking.query.get(booking_id)
                 if booking and booking.status == "pending":
                     booking.status = "confirmed"
                     db.session.commit()

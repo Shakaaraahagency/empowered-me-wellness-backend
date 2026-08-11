@@ -93,40 +93,51 @@ def checkout_webhook():
         event = verify_webhook_signature(payload, sig_header)
     except PaymentError as e:
         return _error(e.message, e.code, 400)
+    except Exception as e:
+        import logging
+        logging.getLogger("emw").exception("Unexpected error verifying Stripe webhook signature")
+        return _error(str(e), "webhook_verification_failed", 400)
 
-    if event["type"] == "checkout.session.completed":
-        from datetime import datetime, timezone
+    try:
+        if event.get("type") == "checkout.session.completed":
+            from datetime import datetime, timezone
+            import logging
+            logger = logging.getLogger("emw")
 
-        session = event["data"]["object"]
-        metadata = session.get("metadata", {})
+            session = event.get("data", {}).get("object", {})
+            metadata = session.get("metadata") or {}
 
-        # 1. Product Order Checkout
-        order_id = metadata.get("order_id")
-        if order_id:
-            order = Order.query.get(order_id)
-            if order and order.status != "paid":
-                order.status = "paid"
-                order.paid_at = datetime.now(timezone.utc)
-                db.session.commit()
+            # 1. Product Order Checkout
+            order_id = metadata.get("order_id")
+            if order_id:
+                order = db.session.get(Order, order_id) or Order.query.get(order_id)
+                if order and order.status != "paid":
+                    order.status = "paid"
+                    order.paid_at = datetime.now(timezone.utc)
+                    db.session.commit()
+                    logger.info("Webhook successfully marked order %s as paid", order.id)
 
-        # 2. Session Event Booking Checkout
-        booking_id = metadata.get("booking_id")
-        if booking_id:
-            from models.booking import Booking
-            booking = Booking.query.get(booking_id)
-            if booking and booking.status == "pending":
-                booking.status = "confirmed"
-                db.session.commit()
-                try:
-                    from services.email_service import send_booking_confirmation
-                    send_booking_confirmation(booking)
-                except Exception:
-                    import logging
-                    logging.getLogger("emw").exception(
-                        "Webhook confirmed booking %s but confirmation email failed.", booking.id
-                    )
+            # 2. Session Event Booking Checkout
+            booking_id = metadata.get("booking_id")
+            if booking_id:
+                from models.booking import Booking
+                booking = db.session.get(Booking, booking_id) or Booking.query.get(booking_id)
+                if booking and booking.status == "pending":
+                    booking.status = "confirmed"
+                    db.session.commit()
+                    logger.info("Webhook successfully marked booking %s as confirmed", booking.id)
+                    try:
+                        from services.email_service import send_booking_confirmation
+                        send_booking_confirmation(booking)
+                    except Exception:
+                        logger.exception("Webhook confirmed booking %s but confirmation email failed.", booking.id)
 
-    return jsonify({"received": True}), 200
+        return jsonify({"received": True}), 200
+    except Exception as e:
+        db.session.rollback()
+        import logging
+        logging.getLogger("emw").exception("Unhandled exception in checkout_webhook: %s", str(e))
+        return jsonify({"error": {"message": str(e), "code": "webhook_processing_error"}}), 500
 
 
 @orders_bp.route("/orders/mine", methods=["GET"])

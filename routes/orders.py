@@ -110,7 +110,7 @@ def checkout_webhook():
             # 1. Product Order Checkout
             order_id = metadata.get("order_id")
             if order_id:
-                order = Order.query.get(order_id)
+                order = db.session.get(Order, order_id)
                 if order and order.status != "paid":
                     order.status = "paid"
                     order.paid_at = datetime.now(timezone.utc)
@@ -121,7 +121,7 @@ def checkout_webhook():
             booking_id = metadata.get("booking_id")
             if booking_id:
                 from models.booking import Booking
-                booking = Booking.query.get(booking_id)
+                booking = db.session.get(Booking, booking_id)
                 if booking and booking.status == "pending":
                     booking.status = "confirmed"
                     db.session.commit()

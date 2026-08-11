@@ -147,10 +147,77 @@ def create_booking_checkout_session(booking, success_url: str, cancel_url: str) 
         logger.exception("Stripe checkout session creation failed for booking %s", booking.id)
         raise PaymentError("Could not start checkout. Please try again.", "stripe_error") from e
 
+    booking.stripe_checkout_session_id = checkout_session.id
     from extensions import db
     db.session.commit()
 
     return {"checkout_url": checkout_session.url, "simulated": False}
+
+
+def sync_order_payment_status(order) -> bool:
+    """
+    Active self-healing sync: if order status is still 'pending' and a Stripe
+    checkout session exists, check directly with Stripe. If paid on Stripe,
+    update status to 'paid' and commit. Returns True if order is paid.
+    """
+    if not order or order.status == "paid":
+        return True
+
+    if not _stripe_configured() or not order.stripe_checkout_session_id:
+        return False
+
+    try:
+        stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
+        session = stripe.checkout.Session.retrieve(order.stripe_checkout_session_id)
+        if session.get("payment_status") == "paid":
+            from datetime import datetime, timezone
+            from extensions import db
+
+            order.status = "paid"
+            order.paid_at = datetime.now(timezone.utc)
+            db.session.commit()
+            logger.info("Self-healing sync marked order %s as paid", order.id)
+            return True
+    except Exception:
+        logger.exception("Failed to sync order %s payment status with Stripe", order.id)
+
+    return False
+
+
+def sync_booking_payment_status(booking) -> bool:
+    """
+    Active self-healing sync: if booking status is still 'pending' and a Stripe
+    checkout session exists, check directly with Stripe. If paid on Stripe,
+    update status to 'confirmed', send confirmation email, and commit.
+    Returns True if booking is confirmed.
+    """
+    if not booking or booking.status == "confirmed":
+        return True
+
+    if not _stripe_configured() or not booking.stripe_checkout_session_id:
+        return False
+
+    try:
+        stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
+        session = stripe.checkout.Session.retrieve(booking.stripe_checkout_session_id)
+        if session.get("payment_status") == "paid":
+            from extensions import db
+
+            booking.status = "confirmed"
+            db.session.commit()
+            logger.info("Self-healing sync marked booking %s as confirmed", booking.id)
+
+            try:
+                from services.email_service import send_booking_confirmation
+                send_booking_confirmation(booking)
+            except Exception:
+                logger.exception("Sync email notification failed for booking %s", booking.id)
+
+            return True
+    except Exception:
+        logger.exception("Failed to sync booking %s payment status with Stripe", booking.id)
+
+    return False
 
 
 def verify_webhook_signature(payload: bytes, sig_header: str) -> dict:

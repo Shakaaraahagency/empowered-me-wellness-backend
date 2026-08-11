@@ -17,6 +17,7 @@ class Booking(db.Model):
     guest_name = db.Column(db.String(255), nullable=True)
     guest_email = db.Column(db.String(255), nullable=True)
     guest_phone = db.Column(db.String(50), nullable=True)
+    stripe_checkout_session_id = db.Column(db.String(255), nullable=True, index=True)
 
     status = db.Column(db.String(20), nullable=False, default="confirmed")
     # confirmed / cancelled / attended / no_show

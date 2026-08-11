@@ -15,4 +15,10 @@ def list_orders_admin():
     if status_filter:
         query = query.filter_by(status=status_filter)
     orders = query.order_by(Order.created_at.desc()).limit(200).all()
+
+    from services.payment_service import sync_order_payment_status
+    for o in orders:
+        if o.status == "pending":
+            sync_order_payment_status(o)
+
     return jsonify([serialize_order(o) for o in orders]), 200

@@ -92,12 +92,21 @@ def my_bookings():
         .order_by(Booking.created_at.desc())
         .all()
     )
+    from services.payment_service import sync_booking_payment_status
+    for b in bookings:
+        if b.status == "pending":
+            sync_booking_payment_status(b)
+
     return jsonify([serialize_booking(b) for b in bookings]), 200
 
 
 @bookings_bp.route("/<booking_id>", methods=["GET"])
 @ownership_required(lambda booking_id: Booking.query.get(booking_id))
 def get_booking(booking_id, resource):
+    if resource.status == "pending":
+        from services.payment_service import sync_booking_payment_status
+        sync_booking_payment_status(resource)
+
     return jsonify(serialize_booking(resource)), 200
 
 

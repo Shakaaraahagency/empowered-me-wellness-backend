@@ -134,18 +134,32 @@ def checkout_webhook():
 def my_orders():
     identity = get_jwt_identity()
     orders = Order.query.filter_by(user_id=identity).order_by(Order.created_at.desc()).all()
+    from services.payment_service import sync_order_payment_status
+
+    for o in orders:
+        if o.status == "pending":
+            sync_order_payment_status(o)
+
     return jsonify([serialize_order(o) for o in orders]), 200
 
 
 @orders_bp.route("/orders/<order_id>", methods=["GET"])
 @ownership_required(lambda order_id: Order.query.get(order_id))
 def get_order(order_id, resource):
+    if resource.status == "pending":
+        from services.payment_service import sync_order_payment_status
+        sync_order_payment_status(resource)
+
     return jsonify(serialize_order(resource)), 200
 
 
 @orders_bp.route("/orders/<order_id>/download/<product_id>", methods=["GET"])
 @ownership_required(lambda order_id, product_id: Order.query.get(order_id))
 def get_download_link(order_id, product_id, resource):
+    if resource.status == "pending":
+        from services.payment_service import sync_order_payment_status
+        sync_order_payment_status(resource)
+
     return _issue_download_link(resource, product_id)
 
 

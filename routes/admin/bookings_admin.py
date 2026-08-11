@@ -23,6 +23,12 @@ def list_bookings():
     if status_filter:
         query = query.filter_by(status=status_filter)
     bookings = query.order_by(Booking.created_at.desc()).limit(200).all()
+
+    from services.payment_service import sync_booking_payment_status
+    for b in bookings:
+        if b.status == "pending":
+            sync_booking_payment_status(b)
+
     return jsonify([serialize_booking(b) for b in bookings]), 200
 
 

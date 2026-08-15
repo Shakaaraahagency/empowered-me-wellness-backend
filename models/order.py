@@ -14,7 +14,8 @@ class Order(db.Model):
 
     total_amount = db.Column(db.Numeric(10, 2), nullable=False)
     status = db.Column(db.String(20), nullable=False, default="pending")
-    # pending / paid / failed
+    # pending / paid / failed / cancelled (cancelled = auto-expired after
+    # sitting unpaid too long, see payment_service.cancel_stale_pending_orders)
 
     stripe_checkout_session_id = db.Column(db.String(255), nullable=True, index=True)
 

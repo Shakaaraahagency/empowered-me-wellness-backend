@@ -30,6 +30,17 @@ class Config:
     from sqlalchemy import pool
     SQLALCHEMY_ENGINE_OPTIONS = {
         "poolclass": pool.NullPool,
+        # Fail fast instead of hanging the whole request if the DB host is
+        # unreachable (network partition, firewall block, DNS issue) — a
+        # gunicorn worker stuck waiting on a dead TCP handshake for 60s+ can
+        # take the whole app down under load. 10s is generous for a normal
+        # connection and short enough to surface a real outage quickly.
+        # SQLite's DBAPI doesn't accept connect_timeout at all (it's a
+        # local file, there's no handshake to time out) — only apply this
+        # for real network databases (MySQL/Postgres), so local dev
+        # (which falls back to sqlite:// when DATABASE_URL isn't set,
+        # see DevConfig below) isn't broken by it.
+        **({} if _raw_db_url.startswith("sqlite") else {"connect_args": {"connect_timeout": 10}}),
     }
     # --- JWT ---
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
@@ -94,6 +105,16 @@ class DevConfig(Config):
     # requires a real DATABASE_URL (enforced in app.py).
     SQLALCHEMY_DATABASE_URI = (
         Config.SQLALCHEMY_DATABASE_URI or "sqlite:///dev_local_only.db"
+    )
+    # Re-derive engine options against the *actual* URI in use here, not
+    # Config's (which was computed before this sqlite fallback existed) —
+    # otherwise a local run with no DATABASE_URL set inherits a
+    # connect_args={"connect_timeout": ...} meant for MySQL/Postgres, and
+    # sqlite3's DBAPI throws on an argument it doesn't recognize.
+    SQLALCHEMY_ENGINE_OPTIONS = (
+        {"poolclass": Config.SQLALCHEMY_ENGINE_OPTIONS["poolclass"]}
+        if SQLALCHEMY_DATABASE_URI.startswith("sqlite")
+        else Config.SQLALCHEMY_ENGINE_OPTIONS
     )
     JWT_COOKIE_SECURE = False
     CORS_ORIGINS = Config.CORS_ORIGINS or ["http://localhost:5500", "http://127.0.0.1:5500"]

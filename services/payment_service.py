@@ -50,6 +50,11 @@ def create_checkout_session(order, success_url: str, cancel_url: str) -> dict:
         order.status = "paid"
         order.paid_at = datetime.now(timezone.utc)
         db.session.commit()
+        try:
+            from services.email_service import send_order_confirmation
+            send_order_confirmation(order)
+        except Exception:
+            logger.exception("Confirmation email failed for simulated order payment %s", order.id)
         return {"checkout_url": success_url, "simulated": True}
 
     stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
@@ -177,11 +182,52 @@ def sync_order_payment_status(order) -> bool:
             order.paid_at = datetime.now(timezone.utc)
             db.session.commit()
             logger.info("Self-healing sync marked order %s as paid", order.id)
+            try:
+                from services.email_service import send_order_confirmation
+                send_order_confirmation(order)
+            except Exception:
+                logger.exception("Sync email notification failed for order %s", order.id)
             return True
     except Exception:
         logger.exception("Failed to sync order %s payment status with Stripe", order.id)
 
     return False
+
+
+def cancel_stale_pending_orders(older_than_hours: int = 24) -> list:
+    """
+    Cancels orders that have sat in 'pending' longer than older_than_hours
+    — abandoned checkouts (Stripe back button, closed tab, never finished
+    entering card details, etc.) that would otherwise accumulate forever.
+
+    Each candidate gets one last live check against Stripe first (via
+    sync_order_payment_status) in case it actually did get paid and just
+    hasn't been picked up yet by any of the other sync paths — we never
+    want to cancel an order that secretly succeeded. Only orders that are
+    still genuinely unpaid after that check get marked 'cancelled'.
+
+    Returns the list of order ids that were cancelled. Safe to call
+    repeatedly (idempotent — already-cancelled orders aren't matched again).
+    """
+    from datetime import datetime, timezone, timedelta
+    from extensions import db
+    from models.order import Order
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=older_than_hours)
+    stale = Order.query.filter(Order.status == "pending", Order.created_at < cutoff).all()
+
+    cancelled_ids = []
+    for order in stale:
+        if sync_order_payment_status(order):
+            continue  # turned out to have actually gone through -- leave it as 'paid'
+        order.status = "cancelled"
+        cancelled_ids.append(order.id)
+
+    if cancelled_ids:
+        db.session.commit()
+        logger.info("Cancelled %d stale pending order(s): %s", len(cancelled_ids), cancelled_ids)
+
+    return cancelled_ids
 
 
 def sync_booking_payment_status(booking) -> bool:

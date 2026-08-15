@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from flask import Blueprint, jsonify, request, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request
@@ -17,9 +17,44 @@ orders_bp = Blueprint("orders", __name__, url_prefix="/api/v1")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# How long a stale, never-completed checkout attempt is still treated as
+# "the same purchase in progress" for de-duplication purposes. Past this
+# window, a new checkout attempt gets its own fresh order — matches
+# Stripe Checkout Session's own default 24h expiry, kept much shorter here
+# since in practice a real retry happens within minutes, not hours.
+DUPLICATE_ORDER_WINDOW = timedelta(minutes=30)
+
 
 def _error(message: str, code: str, status: int):
     return jsonify({"error": {"message": message, "code": code}}), status
+
+
+def _reuse_checkout_session(order):
+    """
+    Returns a still-usable Stripe checkout URL for this order's existing
+    session, or None if there isn't one / it's no longer open (expired,
+    already completed, etc.) — in which case the caller should start a
+    fresh session on the same order row.
+    """
+    if not order.stripe_checkout_session_id:
+        return None
+    try:
+        import stripe
+        from flask import current_app
+        from services.payment_service import _stripe_configured
+
+        if not _stripe_configured():
+            return None
+        stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
+        session = stripe.checkout.Session.retrieve(order.stripe_checkout_session_id)
+        if session.get("status") == "open":
+            return session.url
+    except Exception:
+        import logging
+        logging.getLogger("emw").exception(
+            "Could not verify reusable Stripe session for order %s", order.id
+        )
+    return None
 
 
 def _current_user_optional():
@@ -53,6 +88,45 @@ def checkout():
     products = Product.query.filter(Product.id.in_(product_ids), Product.is_active.is_(True)).all()
     if len(products) != len(set(product_ids)):
         return _error("One or more products could not be found.", "invalid_products", 400)
+
+    # De-dupe: if this same buyer already has a pending, not-yet-abandoned
+    # order for this exact set of products, reuse it instead of creating a
+    # new order + new Stripe session. Without this, a retried checkout
+    # (Stripe back button, a page refresh mid-flow, a slow double-tap that
+    # slips past the frontend's own guard) leaves an orphaned 'pending' row
+    # behind every time, alongside the one that actually got paid.
+    cutoff = datetime.now(timezone.utc) - DUPLICATE_ORDER_WINDOW
+    candidate_query = Order.query.filter(
+        Order.status == "pending",
+        Order.created_at >= cutoff,
+    )
+    candidate_query = (
+        candidate_query.filter(Order.user_id == user.id)
+        if user
+        else candidate_query.filter(Order.guest_email == guest_email, Order.user_id.is_(None))
+    )
+    existing_order = candidate_query.order_by(Order.created_at.desc()).first()
+
+    if existing_order and {i.product_id for i in existing_order.items} == set(product_ids):
+        from services.payment_service import sync_order_payment_status
+
+        # It may have actually gone through since we last saw it (e.g. the
+        # user paid, then hit back) — check before assuming it's reusable.
+        if not sync_order_payment_status(existing_order):
+            reused = _reuse_checkout_session(existing_order)
+            if reused:
+                return jsonify({"order_id": existing_order.id, "checkout_url": reused}), 200
+            # Session couldn't be reused (expired/never created) — fall
+            # through and start fresh on the same order row rather than
+            # creating yet another one.
+            success_url = data.get("success_url") or "https://example.com/order-confirmation.html"
+            cancel_url = data.get("cancel_url") or "https://example.com/shop.html"
+            success_url = f"{success_url}{'&' if '?' in success_url else '?'}order_id={existing_order.id}"
+            try:
+                result = create_checkout_session(existing_order, success_url, cancel_url)
+            except PaymentError as e:
+                return _error(e.message, e.code, 503)
+            return jsonify({"order_id": existing_order.id, "checkout_url": result["checkout_url"]}), 200
 
     total = sum(p.price for p in products)
 
@@ -116,6 +190,11 @@ def checkout_webhook():
                     order.paid_at = datetime.now(timezone.utc)
                     db.session.commit()
                     logger.info("Webhook successfully marked order %s as paid", order.id)
+                    try:
+                        from services.email_service import send_order_confirmation
+                        send_order_confirmation(order)
+                    except Exception:
+                        logger.exception("Webhook marked order %s paid but confirmation email failed.", order.id)
 
             # 2. Session Event Booking Checkout
             booking_id = metadata.get("booking_id")
@@ -197,6 +276,10 @@ def get_guest_download_link(order_id, product_id):
     if not email or order.guest_email != email:
         return _error("Order not found.", "not_found", 404)
 
+    if order.status == "pending":
+        from services.payment_service import sync_order_payment_status
+        sync_order_payment_status(order)
+
     return _issue_download_link(order, product_id)
 
 
@@ -227,13 +310,19 @@ def download_file(token):
     import cloudinary.utils
     from flask import redirect
     try:
-        # Generate a signed URL valid for 1 hour (3600 seconds)
+        # The real, enforced expiry already happened one layer up: the
+        # itsdangerous token in the URL (verify_download_token, above) is
+        # what's actually time-limited (DOWNLOAD_LINK_EXPIRY_SECONDS). This
+        # Cloudinary call just needs a valid signature so the "authenticated"
+        # delivery type will serve the file at all — sign_url=True is the
+        # part that matters; there's no separate Cloudinary-side expiry to
+        # configure here without also setting up token-auth on the Cloudinary
+        # account itself, which would be redundant with the check above.
         signed_url = cloudinary.utils.cloudinary_url(
             product.file_path,
             resource_type="raw",
             type="authenticated",
             sign_url=True,
-            expires_at=int(datetime.now(timezone.utc).timestamp()) + 3600
         )[0] # cloudinary_url returns a tuple (url, options)
         return redirect(signed_url)
     except Exception as e:

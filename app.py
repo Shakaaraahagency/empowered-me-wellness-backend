@@ -134,6 +134,26 @@ def create_app():
 
     register_error_handlers(app)
 
+    # --- Security headers on every response ---
+    # Render terminates TLS, so HSTS/etc. are safe to set unconditionally
+    # for the API's own responses. CSP is intentionally left off here: this
+    # is a JSON API, not an HTML-serving app, so there's no inline
+    # script/style surface for CSP to restrict — the frontend (a separate
+    # static Hostinger deploy) is where CSP would apply, not this backend.
+    @app.after_request
+    def set_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), payment=()"
+        )
+        if env == "production":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        return response
+
     @app.route("/api/v1/health", methods=["GET"])
     def health():
         return {"status": "ok"}, 200
@@ -147,6 +167,8 @@ def create_app():
     # --- CLI: bootstrap the first admin account ---
     # Deliberately NOT an API endpoint — "make me an admin" must never be a
     # request anyone can send. Run with: flask create-admin someone@example.com
+    import click
+
     @app.cli.command("create-admin")
     def create_admin():
         import click
@@ -167,6 +189,20 @@ def create_app():
 
         sent = send_due_reminders()
         click.echo(f"Sent {len(sent)} reminder(s).")
+
+    @app.cli.command("cancel-stale-orders")
+    @click.option(
+        "--hours",
+        default=24,
+        type=int,
+        help="Cancel pending orders older than this many hours (default: 24).",
+    )
+    def cancel_stale_orders_command(hours):
+        import click
+        from services.payment_service import cancel_stale_pending_orders
+
+        cancelled = cancel_stale_pending_orders(older_than_hours=hours)
+        click.echo(f"Cancelled {len(cancelled)} stale pending order(s).")
 
     return app
 

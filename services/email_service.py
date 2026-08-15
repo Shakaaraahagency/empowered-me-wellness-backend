@@ -149,3 +149,68 @@ def send_product_release_notification(email: str, product_name: str, shop_url: s
         """,
     )
 
+
+def send_order_confirmation(order) -> None:
+    """
+    Sent once an order transitions to 'paid' — called from whichever path
+    detected that: the dev-only simulation, the Stripe webhook, or the
+    self-healing sync. Mirrors send_booking_confirmation's role for bookings.
+
+    This links to the order-confirmation page rather than baking in a raw
+    /files/download/<token> URL directly: download tokens expire after
+    DOWNLOAD_LINK_EXPIRY_SECONDS (short-lived, by design — see
+    download_service.py), but this email might be opened days later. The
+    page itself generates a fresh, valid download link at click time
+    instead, the same way it already does right after a live Stripe
+    redirect — this just makes that path reachable from a cold open too.
+    """
+    from urllib.parse import quote
+
+    to = order.contact_email()
+    if not to:
+        logger.warning(
+            "Order %s reached 'paid' with no contact email on file — "
+            "skipping confirmation email (nothing to send it to).",
+            order.id,
+        )
+        return
+
+    base = current_app.config["FRONTEND_BASE_URL"].rstrip("/")
+    is_guest = order.user_id is None
+
+    items_html = ""
+    for item in order.items:
+        product = item.product
+        if not product:
+            continue
+        link = (
+            f"{base}/order-confirmation.html"
+            f"?order_id={order.id}&product_id={product.id}&product_name={quote(product.name)}"
+        )
+        if is_guest:
+            link += f"&email={quote(to)}"
+        items_html += f"""
+        <p style="margin: 20px 0;">
+          <strong>{product.name}</strong><br>
+          <a href="{link}"
+             style="display:inline-block; margin-top:8px; padding:12px 28px; background:#B05535;
+                    color:#F2EDE0; text-decoration:none; border-radius:10px; font-weight:600;">
+            Download your copy
+          </a>
+        </p>
+        """
+
+    _send(
+        to=to,
+        subject="Your Empowered Me Wellness order is ready",
+        html=f"""
+        <div style="font-family: 'Lato', Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #241C13;">
+          <p style="font-size: 18px;">Thank you for your purchase!</p>
+          {items_html}
+          <p style="font-size: 14px; color: #888;">
+            Keep this email — you can come back and use this link any time to re-download your purchase.
+          </p>
+          <p style="font-size: 14px; color: #888;">— Empowered Me Wellness</p>
+        </div>
+        """,
+    )

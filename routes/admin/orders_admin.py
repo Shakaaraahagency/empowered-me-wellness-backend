@@ -22,3 +22,28 @@ def list_orders_admin():
             sync_order_payment_status(o)
 
     return jsonify([serialize_order(o) for o in orders]), 200
+
+
+@orders_admin_bp.route("/cleanup-stale", methods=["POST"])
+@admin_required
+def cleanup_stale_orders_admin():
+    """
+    Manual trigger for the same stale-order cleanup the scheduled
+    `flask cancel-stale-orders` cron job runs automatically. Lets an admin
+    clear out abandoned-checkout clutter on demand from the dashboard
+    without waiting for the next scheduled run, or as a fallback if the
+    Render cron job isn't set up yet.
+    """
+    data = request.get_json(silent=True) or {}
+    hours = data.get("older_than_hours", 24)
+    try:
+        hours = int(hours)
+        if hours < 1:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": {"message": "older_than_hours must be a positive integer.", "code": "invalid_hours"}}), 400
+
+    from services.payment_service import cancel_stale_pending_orders
+    cancelled_ids = cancel_stale_pending_orders(older_than_hours=hours)
+
+    return jsonify({"cancelled_count": len(cancelled_ids), "cancelled_order_ids": cancelled_ids}), 200

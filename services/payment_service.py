@@ -174,7 +174,7 @@ def sync_order_payment_status(order) -> bool:
     try:
         stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
         session = stripe.checkout.Session.retrieve(order.stripe_checkout_session_id)
-        if session.get("payment_status") == "paid":
+        if session.payment_status == "paid":
             from datetime import datetime, timezone
             from extensions import db
 
@@ -194,7 +194,7 @@ def sync_order_payment_status(order) -> bool:
     return False
 
 
-def cancel_stale_pending_orders(older_than_hours: int = 24) -> list:
+def cancel_stale_pending_orders(older_than_hours: int = 24, triggered_by_user_id=None) -> list:
     """
     Cancels orders that have sat in 'pending' longer than older_than_hours
     — abandoned checkouts (Stripe back button, closed tab, never finished
@@ -206,12 +206,21 @@ def cancel_stale_pending_orders(older_than_hours: int = 24) -> list:
     want to cancel an order that secretly succeeded. Only orders that are
     still genuinely unpaid after that check get marked 'cancelled'.
 
+    Called from two places: the admin dashboard's manual "clean up stale
+    orders" button (triggered_by_user_id is the admin's id) and the
+    scheduled `flask cancel-stale-orders` cron job (triggered_by_user_id
+    is None, since nobody's logged in). Both get an audit log entry
+    either way, since this cancels real orders and is exactly the kind
+    of action worth a record of who/what triggered it and which orders
+    were affected.
+
     Returns the list of order ids that were cancelled. Safe to call
     repeatedly (idempotent — already-cancelled orders aren't matched again).
     """
     from datetime import datetime, timezone, timedelta
     from extensions import db
     from models.order import Order
+    from services.audit_service import log_action
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=older_than_hours)
     stale = Order.query.filter(Order.status == "pending", Order.created_at < cutoff).all()
@@ -226,6 +235,12 @@ def cancel_stale_pending_orders(older_than_hours: int = 24) -> list:
     if cancelled_ids:
         db.session.commit()
         logger.info("Cancelled %d stale pending order(s): %s", len(cancelled_ids), cancelled_ids)
+        log_action(
+            "stale_orders_cleaned_up",
+            user_id=triggered_by_user_id,
+            resource_type="order",
+            detail=f"count={len(cancelled_ids)} ids={','.join(cancelled_ids[:15])}" + (" ..." if len(cancelled_ids) > 15 else ""),
+        )
 
     return cancelled_ids
 
@@ -246,7 +261,7 @@ def sync_booking_payment_status(booking) -> bool:
     try:
         stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
         session = stripe.checkout.Session.retrieve(booking.stripe_checkout_session_id)
-        if session.get("payment_status") == "paid":
+        if session.payment_status == "paid":
             from extensions import db
 
             booking.status = "confirmed"

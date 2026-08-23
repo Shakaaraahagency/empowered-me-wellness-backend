@@ -1,12 +1,14 @@
 import os
 import uuid
 from flask import Blueprint, jsonify, request, current_app
+from flask_jwt_extended import get_jwt_identity
 from werkzeug.utils import secure_filename
 
 from extensions import db
 from models.product import Product
 from serializers.product_serializer import serialize_product
 from middleware.admin_required import admin_required
+from services.audit_service import log_action
 
 products_admin_bp = Blueprint("products_admin", __name__, url_prefix="/api/v1/admin/products")
 
@@ -57,6 +59,14 @@ def upload_product_file():
             public_id=f"{uuid.uuid4().hex}_{original_filename}"
         )
         file_path = result.get("public_id")
+        log_action(
+            "product_file_uploaded",
+            user_id=get_jwt_identity(),
+            resource_type="product_file",
+            resource_id=file_path,
+            detail=original_filename,
+            request=request,
+        )
         return jsonify({"file_path": file_path, "filename": original_filename}), 200
     except Exception as e:
         return _error(f"Cloudinary upload failed: {str(e)}", "upload_failed", 500)
@@ -94,6 +104,13 @@ def upload_product_cover():
             public_id=f"{uuid.uuid4().hex}_{original_filename.split('.')[0]}"
         )
         url = result.get("secure_url")
+        log_action(
+            "product_cover_uploaded",
+            user_id=get_jwt_identity(),
+            resource_type="product_file",
+            detail=original_filename,
+            request=request,
+        )
         return jsonify({"url": url, "filename": original_filename}), 200
     except Exception as e:
         return _error(f"Cloudinary upload failed: {str(e)}", "upload_failed", 500)
@@ -138,6 +155,14 @@ def create_product():
     )
     db.session.add(p)
     db.session.commit()
+    log_action(
+        "product_created",
+        user_id=get_jwt_identity(),
+        resource_type="product",
+        resource_id=p.id,
+        detail=p.name,
+        request=request,
+    )
     return jsonify({"id": p.id, "name": p.name}), 201
 
 
@@ -179,6 +204,14 @@ def update_product(product_id):
         p.is_coming_soon = new_is_coming_soon
 
     db.session.commit()
+    log_action(
+        "product_updated",
+        user_id=get_jwt_identity(),
+        resource_type="product",
+        resource_id=p.id,
+        detail=p.name,
+        request=request,
+    )
     return jsonify(serialize_product(p, detail=True)), 200
 
 
@@ -192,6 +225,14 @@ def delete_product(product_id):
     # would break order history the same way hard-deleting a user would.
     p.is_active = False
     db.session.commit()
+    log_action(
+        "product_deactivated",
+        user_id=get_jwt_identity(),
+        resource_type="product",
+        resource_id=p.id,
+        detail=p.name,
+        request=request,
+    )
     return jsonify({"deactivated": True}), 200
 
 
@@ -249,6 +290,15 @@ def release_product(product_id):
     # Clean up: remove the notification sign-ups since the product is live now
     ProductNotification.query.filter_by(product_id=p.id).delete()
     db.session.commit()
+
+    log_action(
+        "product_released",
+        user_id=get_jwt_identity(),
+        resource_type="product",
+        resource_id=p.id,
+        detail=f"{p.name} — notified {sent_count}/{len(subscribers)} subscribers",
+        request=request,
+    )
 
     return jsonify({
         "released": True,

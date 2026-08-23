@@ -8,6 +8,7 @@ from models.user import User
 from models.booking import Booking
 from serializers.booking_serializer import serialize_booking
 from services.booking_service import create_booking, cancel_booking, BookingError
+from services.audit_service import log_action
 from middleware.ownership_required import ownership_required
 
 bookings_bp = Blueprint("bookings", __name__, url_prefix="/api/v1/bookings")
@@ -117,4 +118,11 @@ def cancel_booking_route(booking_id, resource):
         booking = cancel_booking(resource)
     except BookingError as e:
         return _error(e.message, e.code, 400)
+    log_action(
+        "booking_cancelled",
+        user_id=get_jwt_identity(),
+        resource_type="booking",
+        resource_id=booking.id,
+        request=request,
+    )
     return jsonify(serialize_booking(booking)), 200

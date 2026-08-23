@@ -83,6 +83,7 @@ def create_app():
     from models.blog_post import BlogPost  # noqa: F401
     from models.newsletter import NewsletterSubscriber  # noqa: F401
     from models.product_notification import ProductNotification  # noqa: F401
+    from models.audit_log import AuditLog  # noqa: F401
 
     # --- JWT blocklist check: this is what makes logout a real revocation ---
     @jwt.token_in_blocklist_loader
@@ -111,8 +112,10 @@ def create_app():
     from routes.blog import blog_bp
     from routes.newsletter import newsletter_bp
     from routes.admin.reviews_admin import reviews_admin_bp
+    from routes.admin.audit_log_admin import audit_log_admin_bp
 
     app.register_blueprint(reviews_admin_bp)
+    app.register_blueprint(audit_log_admin_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(contact_bp)
     app.register_blueprint(sessions_bp)

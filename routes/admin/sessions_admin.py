@@ -3,12 +3,14 @@ import uuid
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt_identity
 from werkzeug.utils import secure_filename
 
 from extensions import db
 from models.class_ import Class, Session
 from middleware.admin_required import admin_required
 from serializers.session_serializer import serialize_class, serialize_session
+from services.audit_service import log_action
 
 sessions_admin_bp = Blueprint("sessions_admin", __name__, url_prefix="/api/v1/admin")
 
@@ -42,6 +44,14 @@ def create_class():
     )
     db.session.add(c)
     db.session.commit()
+    log_action(
+        "class_created",
+        user_id=get_jwt_identity(),
+        resource_type="class",
+        resource_id=c.id,
+        detail=c.name,
+        request=request,
+    )
     return jsonify({"id": c.id, "name": c.name}), 201
 
 
@@ -68,6 +78,14 @@ def update_class(class_id):
         c.is_active = bool(data.get("is_active"))
 
     db.session.commit()
+    log_action(
+        "class_updated",
+        user_id=get_jwt_identity(),
+        resource_type="class",
+        resource_id=c.id,
+        detail=c.name,
+        request=request,
+    )
     return jsonify(serialize_class(c)), 200
 
 
@@ -79,6 +97,14 @@ def delete_class(class_id):
         return _error("Class not found.", "not_found", 404)
     c.is_active = False
     db.session.commit()
+    log_action(
+        "class_deactivated",
+        user_id=get_jwt_identity(),
+        resource_type="class",
+        resource_id=c.id,
+        detail=c.name,
+        request=request,
+    )
     return jsonify({"deactivated": True}), 200
 
 
@@ -112,6 +138,13 @@ def upload_session_image():
             public_id=f"{uuid.uuid4().hex}_{original_filename.split('.')[0]}"
         )
         url = result.get("secure_url")
+        log_action(
+            "session_image_uploaded",
+            user_id=get_jwt_identity(),
+            resource_type="session_image",
+            detail=original_filename,
+            request=request,
+        )
         return jsonify({"url": url, "filename": original_filename}), 200
     except Exception as e:
         return _error(f"Cloudinary upload failed: {str(e)}", "upload_failed", 500)
@@ -162,6 +195,14 @@ def create_session():
     )
     db.session.add(s)
     db.session.commit()
+    log_action(
+        "session_created",
+        user_id=get_jwt_identity(),
+        resource_type="session",
+        resource_id=s.id,
+        detail=s.title,
+        request=request,
+    )
     return jsonify({"id": s.id, "title": s.title}), 201
 
 
@@ -197,6 +238,14 @@ def update_session(session_id):
         s.image_url = data.get("image_url")
 
     db.session.commit()
+    log_action(
+        "session_updated",
+        user_id=get_jwt_identity(),
+        resource_type="session",
+        resource_id=s.id,
+        detail=s.title,
+        request=request,
+    )
     return jsonify(serialize_session(s, detail=True)), 200
 
 
@@ -217,4 +266,14 @@ def cancel_session(session_id):
         send_cancellation_notice(booking)
 
     db.session.commit()
+
+    log_action(
+        "session_cancelled",
+        user_id=get_jwt_identity(),
+        resource_type="session",
+        resource_id=s.id,
+        detail=f"bookings_notified={len(affected)}",
+        request=request,
+    )
+
     return jsonify({"cancelled": True, "notified": affected}), 200

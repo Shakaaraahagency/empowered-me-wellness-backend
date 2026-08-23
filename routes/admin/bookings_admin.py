@@ -1,11 +1,13 @@
 import logging
 
 from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt_identity
 
 from extensions import db
 from models.booking import Booking
 from serializers.booking_serializer import serialize_booking
 from middleware.admin_required import admin_required
+from services.audit_service import log_action
 
 bookings_admin_bp = Blueprint("bookings_admin", __name__, url_prefix="/api/v1/admin/bookings")
 logger = logging.getLogger("emw")
@@ -46,6 +48,14 @@ def mark_attendance(booking_id):
 
     booking.status = status
     db.session.commit()
+    log_action(
+        "booking_attendance_marked",
+        user_id=get_jwt_identity(),
+        resource_type="booking",
+        resource_id=booking.id,
+        detail=f"status={status}",
+        request=request,
+    )
     return jsonify(serialize_booking(booking)), 200
 
 
@@ -69,6 +79,14 @@ def admin_cancel_booking(booking_id):
     booking.status = "cancelled"
     booking.cancelled_at = datetime.now(timezone.utc)
     db.session.commit()
+
+    log_action(
+        "booking_cancelled_by_admin",
+        user_id=get_jwt_identity(),
+        resource_type="booking",
+        resource_id=booking.id,
+        request=request,
+    )
 
     send_cancellation_notice(booking)
 

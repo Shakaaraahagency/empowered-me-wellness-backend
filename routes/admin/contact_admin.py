@@ -1,8 +1,10 @@
 from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt_identity
 
 from extensions import db
 from models.contact_message import ContactMessage
 from middleware.admin_required import admin_required
+from services.audit_service import log_action
 
 contact_admin_bp = Blueprint("contact_admin", __name__, url_prefix="/api/v1/admin/contact-messages")
 
@@ -47,4 +49,12 @@ def update_message_status(message_id):
 
     m.status = status
     db.session.commit()
+    log_action(
+        "contact_message_status_changed",
+        user_id=get_jwt_identity(),
+        resource_type="contact_message",
+        resource_id=m.id,
+        detail=f"status={status}",
+        request=request,
+    )
     return jsonify(_serialize(m)), 200

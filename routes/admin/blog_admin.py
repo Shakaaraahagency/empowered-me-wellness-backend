@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 from extensions import db
 from models.blog_post import BlogPost, slugify
 from serializers.blog_serializer import serialize_post_admin
+from services.audit_service import log_action
 from middleware.admin_required import admin_required
 
 blog_admin_bp = Blueprint("blog_admin", __name__, url_prefix="/api/v1/admin/blog")
@@ -75,6 +76,13 @@ def upload_blog_media():
         result = cloudinary.uploader.upload(uploaded_file, **upload_kwargs)
         url = result.get("secure_url")
         media_type = "video" if is_video else "image"
+        log_action(
+            "blog_media_uploaded",
+            user_id=get_jwt_identity(),
+            resource_type="blog_media",
+            detail=f"{original_filename} ({media_type})",
+            request=request,
+        )
         return jsonify({"url": url, "filename": original_filename, "type": media_type}), 200
     except Exception as e:
         return _error(f"Cloudinary upload failed: {str(e)}", "upload_failed", 500)
@@ -115,6 +123,14 @@ def create_post():
     )
     db.session.add(post)
     db.session.commit()
+    log_action(
+        "blog_post_created",
+        user_id=author_id,
+        resource_type="blog_post",
+        resource_id=post.id,
+        detail=post.title,
+        request=request,
+    )
     return jsonify(serialize_post_admin(post)), 201
 
 
@@ -148,6 +164,7 @@ def update_post(post_id):
     if "seo_description" in data:
         post.seo_description = data.get("seo_description")
 
+    was_published = post.status == "published"
     if "status" in data:
         new_status = data.get("status")
         if new_status not in ("draft", "published"):
@@ -157,6 +174,17 @@ def update_post(post_id):
         post.status = new_status
 
     db.session.commit()
+
+    action = "blog_post_published" if (not was_published and post.status == "published") else "blog_post_updated"
+    log_action(
+        action,
+        user_id=get_jwt_identity(),
+        resource_type="blog_post",
+        resource_id=post.id,
+        detail=post.title,
+        request=request,
+    )
+
     return jsonify(serialize_post_admin(post)), 200
 
 
@@ -166,6 +194,15 @@ def delete_post(post_id):
     post = BlogPost.query.get(post_id)
     if not post:
         return _error("Post not found.", "not_found", 404)
+    title = post.title
     db.session.delete(post)
     db.session.commit()
+    log_action(
+        "blog_post_deleted",
+        user_id=get_jwt_identity(),
+        resource_type="blog_post",
+        resource_id=post_id,
+        detail=title,
+        request=request,
+    )
     return jsonify({"deleted": True}), 200

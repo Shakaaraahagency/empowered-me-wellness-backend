@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt_identity
 
 from models.order import Order
 from serializers.order_serializer import serialize_order
@@ -44,6 +45,6 @@ def cleanup_stale_orders_admin():
         return jsonify({"error": {"message": "older_than_hours must be a positive integer.", "code": "invalid_hours"}}), 400
 
     from services.payment_service import cancel_stale_pending_orders
-    cancelled_ids = cancel_stale_pending_orders(older_than_hours=hours)
+    cancelled_ids = cancel_stale_pending_orders(older_than_hours=hours, triggered_by_user_id=get_jwt_identity())
 
     return jsonify({"cancelled_count": len(cancelled_ids), "cancelled_order_ids": cancelled_ids}), 200

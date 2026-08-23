@@ -15,6 +15,7 @@ from flask_jwt_extended import (
 
 from extensions import db, limiter
 from models.user import User, TokenBlocklist
+from services.audit_service import log_action
 from services.account_service import (
     request_password_reset,
     reset_password,
@@ -107,6 +108,7 @@ def login():
         # Standard login flow
         user = User.query.filter_by(email=email).first()
         if not user or not user.check_password(password):
+            log_action("login_failed", detail=f"email={email}", request=request)
             return _error("Invalid email or password.", "invalid_credentials", 401)
 
     access_token = create_access_token(identity=user.id, additional_claims={"role": user.role})
@@ -128,6 +130,8 @@ def login():
     _record_token(decode_token(access_token), user.id)
     _record_token(decode_token(refresh_token), user.id)
     db.session.commit()
+
+    log_action("login_success", user_id=user.id, request=request)
 
     return resp, 200
 

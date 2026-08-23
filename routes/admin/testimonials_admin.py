@@ -1,8 +1,10 @@
 from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt_identity
 
 from extensions import db
 from models.testimonial import Testimonial
 from middleware.admin_required import admin_required
+from services.audit_service import log_action
 
 testimonials_admin_bp = Blueprint(
     "testimonials_admin", __name__, url_prefix="/api/v1/admin/testimonials"
@@ -53,6 +55,14 @@ def create_testimonial():
     )
     db.session.add(t)
     db.session.commit()
+    log_action(
+        "testimonial_created",
+        user_id=get_jwt_identity(),
+        resource_type="testimonial",
+        resource_id=t.id,
+        detail=t.author_name,
+        request=request,
+    )
     return jsonify(_serialize_admin(t)), 201
 
 
@@ -64,6 +74,7 @@ def update_testimonial(testimonial_id):
         return _error("Testimonial not found.", "not_found", 404)
 
     data = request.get_json(silent=True) or {}
+    was_approved = t.is_approved
     if "author_name" in data:
         t.author_name = (data.get("author_name") or "").strip()
     if "role" in data:
@@ -76,6 +87,17 @@ def update_testimonial(testimonial_id):
         t.is_approved = bool(data.get("is_approved"))
 
     db.session.commit()
+
+    action = "testimonial_approved" if (not was_approved and t.is_approved) else "testimonial_updated"
+    log_action(
+        action,
+        user_id=get_jwt_identity(),
+        resource_type="testimonial",
+        resource_id=t.id,
+        detail=t.author_name,
+        request=request,
+    )
+
     return jsonify(_serialize_admin(t)), 200
 
 
@@ -85,6 +107,15 @@ def delete_testimonial(testimonial_id):
     t = Testimonial.query.get(testimonial_id)
     if not t:
         return _error("Testimonial not found.", "not_found", 404)
+    author_name = t.author_name
     db.session.delete(t)
     db.session.commit()
+    log_action(
+        "testimonial_deleted",
+        user_id=get_jwt_identity(),
+        resource_type="testimonial",
+        resource_id=testimonial_id,
+        detail=author_name,
+        request=request,
+    )
     return jsonify({"deleted": True}), 200

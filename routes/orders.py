@@ -47,7 +47,7 @@ def _reuse_checkout_session(order):
             return None
         stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
         session = stripe.checkout.Session.retrieve(order.stripe_checkout_session_id)
-        if session.get("status") == "open":
+        if session.status == "open":
             return session.url
     except Exception:
         import logging
@@ -179,7 +179,7 @@ def checkout_webhook():
             logger = logging.getLogger("emw")
 
             session = event["data"]["object"]
-            metadata = session.get("metadata") or {}
+            metadata = session.metadata.to_dict() if session.metadata else {}
 
             # 1. Product Order Checkout
             order_id = metadata.get("order_id")

@@ -1,7 +1,7 @@
 """add expires_at to bookings table
 
 Revision ID: b3c4d5e6f7g8
-Revises: a2b3c4d5e6f7
+Revises: fa645fcd2257
 Create Date: 2026-08-25 14:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'b3c4d5e6f7g8'
-down_revision = 'a2b3c4d5e6f7'
+down_revision = 'fa645fcd2257'
 branch_labels = None
 depends_on = None
 

@@ -5,6 +5,7 @@ from models.class_ import Session
 from models.booking import Booking
 
 CANCELLATION_WINDOW_HOURS = 24
+PENDING_BOOKING_EXPIRY_MINUTES = 10  # how long a pending booking holds a slot
 
 
 class BookingError(Exception):
@@ -34,6 +35,8 @@ def create_booking(session_id: str, user=None, guest_info: dict | None = None) -
     initial_status = "pending" if is_paid else "confirmed"
 
     booking = Booking(session_id=session.id, status=initial_status)
+    if is_paid:
+        booking.expires_at = datetime.now(timezone.utc) + timedelta(minutes=PENDING_BOOKING_EXPIRY_MINUTES)
     if user:
         booking.user_id = user.id
     else:

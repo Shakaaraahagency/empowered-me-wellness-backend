@@ -211,6 +211,34 @@ def checkout_webhook():
                     except Exception:
                         logger.exception("Webhook confirmed booking %s but confirmation email failed.", booking.id)
 
+        elif event["type"] == "checkout.session.expired":
+            from datetime import datetime, timezone
+            import logging
+            logger = logging.getLogger("emw")
+
+            session = event["data"]["object"]
+            metadata = session.metadata.to_dict() if session.metadata else {}
+
+            # Handle expired booking checkout — release the held slot
+            booking_id = metadata.get("booking_id")
+            if booking_id:
+                from models.booking import Booking
+                booking = db.session.get(Booking, booking_id)
+                if booking and booking.status == "pending":
+                    booking.status = "expired"
+                    booking.cancelled_at = datetime.now(timezone.utc)
+                    db.session.commit()
+                    logger.info("Webhook: expired unpaid booking %s (Stripe session expired)", booking.id)
+
+            # Handle expired order checkout
+            order_id = metadata.get("order_id")
+            if order_id:
+                order = db.session.get(Order, order_id)
+                if order and order.status == "pending":
+                    order.status = "cancelled"
+                    db.session.commit()
+                    logger.info("Webhook: cancelled order %s (Stripe session expired)", order.id)
+
         return jsonify({"received": True}), 200
     except Exception as e:
         db.session.rollback()

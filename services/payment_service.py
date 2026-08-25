@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone, timedelta
 
 import stripe
 from flask import current_app
@@ -147,6 +148,7 @@ def create_booking_checkout_session(booking, success_url: str, cancel_url: str) 
             cancel_url=cancel_url,
             metadata={"booking_id": str(booking.id)},
             customer_email=booking.contact_email() or None,
+            expires_at=int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()),
         )
     except stripe.error.StripeError as e:
         logger.exception("Stripe checkout session creation failed for booking %s", booking.id)
@@ -279,6 +281,40 @@ def sync_booking_payment_status(booking) -> bool:
         logger.exception("Failed to sync booking %s payment status with Stripe", booking.id)
 
     return False
+
+
+def cancel_expired_pending_bookings() -> list:
+    """Cancels pending bookings whose expires_at has passed — abandoned
+    checkout attempts that are holding slots other people could use.
+
+    Each candidate gets one last live check against Stripe first to make
+    sure it didn't actually get paid. Only genuinely unpaid bookings are
+    cancelled.
+
+    Returns the list of booking IDs that were cancelled."""
+    from extensions import db
+    from models.booking import Booking
+
+    now = datetime.now(timezone.utc)
+    stale = Booking.query.filter(
+        Booking.status == "pending",
+        Booking.expires_at.isnot(None),
+        Booking.expires_at <= now,
+    ).all()
+
+    cancelled_ids = []
+    for booking in stale:
+        if sync_booking_payment_status(booking):
+            continue  # actually got paid — leave it as 'confirmed'
+        booking.status = "expired"
+        booking.cancelled_at = now
+        cancelled_ids.append(str(booking.id))
+
+    if cancelled_ids:
+        db.session.commit()
+        logger.info("Expired %d stale pending booking(s): %s", len(cancelled_ids), cancelled_ids)
+
+    return cancelled_ids
 
 
 def verify_webhook_signature(payload: bytes, sig_header: str) -> dict:

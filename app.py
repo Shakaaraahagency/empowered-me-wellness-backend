@@ -207,6 +207,14 @@ def create_app():
         cancelled = cancel_stale_pending_orders(older_than_hours=hours)
         click.echo(f"Cancelled {len(cancelled)} stale pending order(s).")
 
+    @app.cli.command("expire-stale-bookings")
+    def expire_stale_bookings_command():
+        import click
+        from services.payment_service import cancel_expired_pending_bookings
+
+        expired = cancel_expired_pending_bookings()
+        click.echo(f"Expired {len(expired)} stale pending booking(s).")
+
     return app
 
 

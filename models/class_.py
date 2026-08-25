@@ -42,12 +42,22 @@ class Session(db.Model):
     bookings = db.relationship("Booking", backref="session", lazy="dynamic")
 
     @property
+    def active_booking_count(self) -> int:
+        """Counts confirmed + pending (awaiting payment) bookings.
+        Pending bookings hold a slot temporarily to prevent overbooking."""
+        from models.booking import Booking
+        return self.bookings.filter(
+            Booking.status.in_(["confirmed", "pending"])
+        ).count()
+
+    @property
     def confirmed_booking_count(self) -> int:
-        return self.bookings.filter_by(status="confirmed").count()
+        # Kept for backwards compat — now includes pending to hold slots
+        return self.active_booking_count
 
     @property
     def spots_remaining(self) -> int:
-        return max(self.capacity - self.confirmed_booking_count, 0)
+        return max(self.capacity - self.active_booking_count, 0)
 
     @property
     def is_full(self) -> bool:

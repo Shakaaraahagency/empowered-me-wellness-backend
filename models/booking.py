@@ -25,6 +25,7 @@ class Booking(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     cancelled_at = db.Column(db.DateTime, nullable=True)
     reminder_sent_at = db.Column(db.DateTime, nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True)  # auto-cancel if unpaid by this time
 
     def contact_name(self) -> str:
         if self.user_id and self.user:

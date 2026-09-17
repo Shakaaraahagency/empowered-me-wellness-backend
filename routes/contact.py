@@ -45,8 +45,8 @@ def submit_contact():
     db.session.add(entry)
     db.session.commit()
 
-    # Real email notification to Latoya wired up in Phase 6 (email_service).
-    # For now the message is safely persisted and visible in the admin
-    # dashboard once Phase 5 ships.
+    # Send email notification
+    from services.email_service import send_contact_notification
+    send_contact_notification(name, email, message)
 
     return jsonify({"submitted": True}), 201

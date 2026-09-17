@@ -9,6 +9,8 @@ from models.product import Product
 from serializers.product_serializer import serialize_product
 from middleware.admin_required import admin_required
 from services.audit_service import log_action
+from models.newsletter import NewsletterSubscriber
+from services.email_service import send_new_product_notification
 
 products_admin_bp = Blueprint("products_admin", __name__, url_prefix="/api/v1/admin/products")
 
@@ -163,6 +165,19 @@ def create_product():
         detail=p.name,
         request=request,
     )
+
+    if not is_coming_soon:
+        import logging
+        logger = logging.getLogger("emw")
+        try:
+            subscribers = NewsletterSubscriber.query.filter_by(status="active").all()
+            frontend_base = current_app.config.get("FRONTEND_BASE_URL", "http://127.0.0.1:5500")
+            product_url = f"{frontend_base}/product-detail.html?id={p.id}"
+            sent_count = send_new_product_notification(subscribers, p.name, product_url)
+            logger.info("Sent %d new product notifications", sent_count)
+        except Exception as e:
+            logger.exception("Failed to send broadcast product notifications: %s", e)
+
     return jsonify({"id": p.id, "name": p.name}), 201
 
 
@@ -195,12 +210,14 @@ def update_product(product_id):
         p.category = data.get("category")
     if "release_date" in data:
         p.release_date = data.get("release_date")
+    was_released = False
     if "is_coming_soon" in data:
         new_is_coming_soon = bool(data.get("is_coming_soon"))
         if p.is_coming_soon and not new_is_coming_soon:
             # Switching from coming soon to live
             if not p.file_path and not ("file_path" in data and data.get("file_path")):
                 return _error("Cannot switch from coming-soon to live without a product file. Upload the file first.", "missing_file", 400)
+            was_released = True
         p.is_coming_soon = new_is_coming_soon
 
     db.session.commit()
@@ -212,6 +229,19 @@ def update_product(product_id):
         detail=p.name,
         request=request,
     )
+
+    if was_released:
+        import logging
+        logger = logging.getLogger("emw")
+        try:
+            subscribers = NewsletterSubscriber.query.filter_by(status="active").all()
+            frontend_base = current_app.config.get("FRONTEND_BASE_URL", "http://127.0.0.1:5500")
+            product_url = f"{frontend_base}/product-detail.html?id={p.id}"
+            sent_count = send_new_product_notification(subscribers, p.name, product_url)
+            logger.info("Sent %d product release broadcast notifications", sent_count)
+        except Exception as e:
+            logger.exception("Failed to send broadcast product notifications: %s", e)
+
     return jsonify(serialize_product(p, detail=True)), 200
 
 
@@ -276,6 +306,7 @@ def release_product(product_id):
     shop_url = f"{frontend_base}/product-detail.html?id={p.id}"
 
     sent_count = 0
+    # 1. Send to waitlist
     for sub in subscribers:
         try:
             send_product_release_notification(
@@ -290,6 +321,19 @@ def release_product(product_id):
     # Clean up: remove the notification sign-ups since the product is live now
     ProductNotification.query.filter_by(product_id=p.id).delete()
     db.session.commit()
+
+    # 2. Send to general newsletter subscribers
+    try:
+        general_subscribers = NewsletterSubscriber.query.filter_by(status="active").all()
+        # Filter out people who already got the waitlist email to avoid duplicates
+        waitlist_emails = {s.email for s in subscribers}
+        filtered_general = [s for s in general_subscribers if s.email not in waitlist_emails]
+        
+        general_sent = send_new_product_notification(filtered_general, p.name, shop_url)
+        sent_count += general_sent
+        logger.info("Sent %d general product broadcast notifications", general_sent)
+    except Exception as e:
+        logger.exception("Failed to send broadcast product notifications: %s", e)
 
     log_action(
         "product_released",

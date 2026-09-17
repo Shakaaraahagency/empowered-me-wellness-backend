@@ -214,3 +214,117 @@ def send_order_confirmation(order) -> None:
         </div>
         """,
     )
+
+
+def send_contact_notification(name: str, email: str, message: str) -> None:
+    """Send a notification when someone fills out the contact form."""
+    _send(
+        to="info@emw.yoga",
+        subject=f"New Contact Form Submission from {name}",
+        html=f"""
+        <div style="font-family: 'Lato', Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #241C13;">
+          <h2 style="font-size: 18px; border-bottom: 1px solid #eee; padding-bottom: 10px;">New Contact Form Submission</h2>
+          <p><strong>Name:</strong> {name}</p>
+          <p><strong>Email:</strong> {email}</p>
+          <div style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 8px;">
+            <p style="margin: 0; white-space: pre-wrap;">{message}</p>
+          </div>
+        </div>
+        """,
+    )
+
+
+def send_new_blog_notification(subscribers: list, post_title: str, post_url: str) -> int:
+    """
+    Broadcast a new blog post to all active newsletter subscribers.
+    Returns the number of emails successfully dispatched.
+    """
+    sent = 0
+    for sub in subscribers:
+        try:
+            _send(
+                to=sub.email,
+                subject=f"New from Empowered Me Wellness: {post_title}",
+                html=f"""
+                <div style="font-family: 'Lato', Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #241C13;">
+                  <p style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em;
+                             text-transform: uppercase; color: #4B7A3E; margin-bottom: 8px;">
+                    New Resource
+                  </p>
+                  <h1 style="font-family: 'Cormorant Garamond', Georgia, serif; font-size: 28px;
+                              font-weight: 600; line-height: 1.3; margin: 0 0 16px;">
+                    {post_title}
+                  </h1>
+                  <p style="font-size: 16px; line-height: 1.65; opacity: 0.88; margin-bottom: 28px;">
+                    A new resource has just been published on the Empowered Me Wellness healing library.
+                    Click below to read it now.
+                  </p>
+                  <p style="margin: 28px 0;">
+                    <a href="{post_url}"
+                       style="display: inline-block; padding: 14px 32px; background: #B05535;
+                              color: #F2EDE0; text-decoration: none; border-radius: 10px;
+                              font-weight: 600; font-size: 15px;">
+                      Read the Article &rarr;
+                    </a>
+                  </p>
+                  <hr style="border: none; border-top: 1px solid #E5D9C4; margin: 32px 0;">
+                  <p style="font-size: 13px; color: #888; line-height: 1.6;">
+                    You're receiving this because you subscribed to Empowered Me Wellness updates.<br>
+                    <a href="https://www.empoweredmewellness.com/newsletter-unsubscribe.html?email={sub.email}"
+                       style="color: #888;">Unsubscribe</a>
+                  </p>
+                </div>
+                """,
+            )
+            sent += 1
+        except Exception:
+            logger.exception("Failed to send blog notification to %s", sub.email)
+    return sent
+
+
+def send_new_product_notification(subscribers: list, product_name: str, product_url: str) -> int:
+    """
+    Broadcast a new product / book release to all active newsletter subscribers.
+    Returns the number of emails successfully dispatched.
+    """
+    sent = 0
+    for sub in subscribers:
+        try:
+            _send(
+                to=sub.email,
+                subject=f"New from Empowered Me Wellness: {product_name}",
+                html=f"""
+                <div style="font-family: 'Lato', Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #241C13;">
+                  <p style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em;
+                             text-transform: uppercase; color: #4B7A3E; margin-bottom: 8px;">
+                    Now Available
+                  </p>
+                  <h1 style="font-family: 'Cormorant Garamond', Georgia, serif; font-size: 28px;
+                              font-weight: 600; line-height: 1.3; margin: 0 0 16px;">
+                    {product_name}
+                  </h1>
+                  <p style="font-size: 16px; line-height: 1.65; opacity: 0.88; margin-bottom: 28px;">
+                    A new publication from Empowered Me Wellness is now available in the shop.
+                    As a subscriber, you're among the first to know.
+                  </p>
+                  <p style="margin: 28px 0;">
+                    <a href="{product_url}"
+                       style="display: inline-block; padding: 14px 32px; background: #B05535;
+                              color: #F2EDE0; text-decoration: none; border-radius: 10px;
+                              font-weight: 600; font-size: 15px;">
+                      Get Your Copy &rarr;
+                    </a>
+                  </p>
+                  <hr style="border: none; border-top: 1px solid #E5D9C4; margin: 32px 0;">
+                  <p style="font-size: 13px; color: #888; line-height: 1.6;">
+                    You're receiving this because you subscribed to Empowered Me Wellness updates.<br>
+                    <a href="https://www.empoweredmewellness.com/newsletter-unsubscribe.html?email={sub.email}"
+                       style="color: #888;">Unsubscribe</a>
+                  </p>
+                </div>
+                """,
+            )
+            sent += 1
+        except Exception:
+            logger.exception("Failed to send product notification to %s", sub.email)
+    return sent

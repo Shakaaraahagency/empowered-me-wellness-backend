@@ -11,6 +11,9 @@ from models.blog_post import BlogPost, slugify
 from serializers.blog_serializer import serialize_post_admin
 from services.audit_service import log_action
 from middleware.admin_required import admin_required
+from models.newsletter import NewsletterSubscriber
+from services.email_service import send_new_blog_notification
+from flask import current_app
 
 blog_admin_bp = Blueprint("blog_admin", __name__, url_prefix="/api/v1/admin/blog")
 
@@ -184,6 +187,18 @@ def update_post(post_id):
         detail=post.title,
         request=request,
     )
+
+    if action == "blog_post_published":
+        import logging
+        logger = logging.getLogger("emw")
+        try:
+            subscribers = NewsletterSubscriber.query.filter_by(status="active").all()
+            frontend_base = current_app.config.get("FRONTEND_BASE_URL", "http://127.0.0.1:5500")
+            post_url = f"{frontend_base}/blog-post.html?slug={post.slug}"
+            sent_count = send_new_blog_notification(subscribers, post.title, post_url)
+            logger.info("Sent %d blog publish notifications", sent_count)
+        except Exception as e:
+            logger.exception("Failed to send broadcast blog notifications: %s", e)
 
     return jsonify(serialize_post_admin(post)), 200
 

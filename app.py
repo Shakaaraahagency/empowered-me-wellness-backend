@@ -81,6 +81,7 @@ def create_app():
     from models.password_reset_token import PasswordResetToken  # noqa: F401
     from models.testimonial import Testimonial  # noqa: F401
     from models.blog_post import BlogPost  # noqa: F401
+    from models.video import Video  # noqa: F401
     from models.newsletter import NewsletterSubscriber  # noqa: F401
     from models.product_notification import ProductNotification  # noqa: F401
     from models.audit_log import AuditLog  # noqa: F401
@@ -113,6 +114,8 @@ def create_app():
     from routes.newsletter import newsletter_bp
     from routes.admin.reviews_admin import reviews_admin_bp
     from routes.admin.audit_log_admin import audit_log_admin_bp
+    from routes.videos import videos_bp
+    from routes.admin.videos_admin import videos_admin_bp
 
     app.register_blueprint(reviews_admin_bp)
     app.register_blueprint(audit_log_admin_bp)
@@ -134,6 +137,8 @@ def create_app():
     app.register_blueprint(testimonials_bp)
     app.register_blueprint(blog_bp)
     app.register_blueprint(newsletter_bp)
+    app.register_blueprint(videos_bp)
+    app.register_blueprint(videos_admin_bp)
 
     register_error_handlers(app)
 

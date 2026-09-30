@@ -15,6 +15,9 @@ class Product(db.Model):
     # Path relative to PROTECTED_FILES_DIR — never a publicly reachable URL.
     # The actual download URL is generated on demand via download_service.
     file_path = db.Column(db.String(500), nullable=True)
+    # External download link (e.g., MediaFire) — used when the file is too
+    # large for Cloudinary.  Falls back to this when file_path is empty.
+    file_url = db.Column(db.String(1000), nullable=True)
     cover_image_url = db.Column(db.String(500), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     is_coming_soon = db.Column(db.Boolean, nullable=False, default=False)

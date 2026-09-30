@@ -11,6 +11,7 @@ def serialize_product(p, detail=False):
     if detail:
         data["description"] = p.description
         data["file_path"] = p.file_path
+        data["file_url"] = p.file_url
         data["is_active"] = p.is_active
         # Show how many people are waiting for this coming-soon product
         if p.is_coming_soon and hasattr(p, "notifications"):

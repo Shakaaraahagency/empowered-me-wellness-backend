@@ -335,6 +335,13 @@ def download_file(token):
     if not product:
         return _error("File not found.", "not_found", 404)
 
+    # External download link — redirect directly.  The download token above
+    # already verified that the buyer paid for this product, so discovery of
+    # the external URL is still gated behind purchase verification.
+    if product.file_url and not product.file_path:
+        from flask import redirect
+        return redirect(product.file_url)
+
     import cloudinary.utils
     from flask import redirect
     try:

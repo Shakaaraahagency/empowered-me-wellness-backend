@@ -132,6 +132,7 @@ def create_product():
     name = (data.get("name") or "").strip()
     price = data.get("price")
     file_path = (data.get("file_path") or "").strip(" '\"")
+    file_url = (data.get("file_url") or "").strip()
     is_coming_soon = bool(data.get("is_coming_soon", False))
     release_date = data.get("release_date")
 
@@ -139,11 +140,14 @@ def create_product():
         return _error("Product name is required.", "invalid_name", 400)
     if price is None or float(price) < 0:
         return _error("A valid price is required.", "invalid_price", 400)
-        
+    if file_url and not file_url.startswith(("https://", "http://")):
+        return _error("Please provide a valid URL starting with https://.", "invalid_url", 400)
+
     if is_coming_soon:
         file_path = file_path or None
-    elif not file_path:
-        return _error("file_path is required.", "invalid_file_path", 400)
+        file_url = file_url or None
+    elif not file_path and not file_url:
+        return _error("Either upload a file or provide a download link.", "missing_file", 400)
 
     p = Product(
         name=name,
@@ -151,6 +155,7 @@ def create_product():
         price=price,
         category=data.get("category", "ebook"),
         file_path=file_path,
+        file_url=file_url or None,
         cover_image_url=data.get("cover_image_url"),
         is_coming_soon=is_coming_soon,
         release_date=release_date,
@@ -202,6 +207,11 @@ def update_product(product_id):
         p.price = data.get("price")
     if "file_path" in data:
         p.file_path = (data.get("file_path") or "").strip(" '\"")
+    if "file_url" in data:
+        new_url = (data.get("file_url") or "").strip()
+        if new_url and not new_url.startswith(("https://", "http://")):
+            return _error("Please provide a valid URL starting with https://.", "invalid_url", 400)
+        p.file_url = new_url or None
     if "cover_image_url" in data:
         p.cover_image_url = data.get("cover_image_url")
     if "is_active" in data:
@@ -214,9 +224,11 @@ def update_product(product_id):
     if "is_coming_soon" in data:
         new_is_coming_soon = bool(data.get("is_coming_soon"))
         if p.is_coming_soon and not new_is_coming_soon:
-            # Switching from coming soon to live
-            if not p.file_path and not ("file_path" in data and data.get("file_path")):
-                return _error("Cannot switch from coming-soon to live without a product file. Upload the file first.", "missing_file", 400)
+            # Switching from coming soon to live — need either a file or a link
+            has_file = p.file_path or ("file_path" in data and data.get("file_path"))
+            has_url = p.file_url or ("file_url" in data and data.get("file_url"))
+            if not has_file and not has_url:
+                return _error("Cannot switch from coming-soon to live without a product file or download link.", "missing_file", 400)
             was_released = True
         p.is_coming_soon = new_is_coming_soon
 
@@ -287,16 +299,23 @@ def release_product(product_id):
     # --- Accept file_path from JSON body (file was uploaded via /upload first) ---
     data = request.get_json(silent=True) or {}
     file_path = (data.get("file_path") or "").strip(" '\"")
+    file_url = (data.get("file_url") or "").strip()
 
-    if not file_path:
+    if not file_path and not file_url:
         return _error(
-            "A product file is required to release. Upload the file first via /upload.",
+            "A product file or download link is required to release.",
             "missing_file",
             400,
         )
 
+    if file_url and not file_url.startswith(("https://", "http://")):
+        return _error("Please provide a valid URL starting with https://.", "invalid_url", 400)
+
     # Update the product
-    p.file_path = file_path
+    if file_path:
+        p.file_path = file_path
+    if file_url:
+        p.file_url = file_url
     p.is_coming_soon = False
     db.session.commit()
 

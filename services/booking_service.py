@@ -23,8 +23,14 @@ def create_booking(session_id: str, user=None, guest_info: dict | None = None) -
     if session.status != "scheduled":
         raise BookingError("This session is no longer available.", "session_unavailable")
 
-    # Reject bookings for sessions that have already started
-    if session.start_time.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
+    # Reject bookings for sessions that have already ended
+    # Use a DB query to compare against the database clock, avoiding timezone mismatches
+    from extensions import db
+    past_check = Session.query.filter(
+        Session.id == session.id,
+        Session.end_time < db.func.now()
+    ).first()
+    if past_check:
         raise BookingError(
             "Registration for this session has closed.",
             "session_expired",

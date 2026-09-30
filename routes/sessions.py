@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from flask import Blueprint, jsonify
 
 from extensions import db
@@ -14,12 +12,13 @@ def close_past_sessions():
 
     Called on every public or admin listing request so the database
     stays clean without needing a cron job or background worker.
+    Uses db.func.now() so the comparison happens entirely inside
+    PostgreSQL, avoiding Python timezone-aware vs naive mismatches.
     """
-    now = datetime.now(timezone.utc)
     count = (
         Session.query
-        .filter(Session.status == "scheduled", Session.end_time < now)
-        .update({"status": "closed"})
+        .filter(Session.status == "scheduled", Session.end_time < db.func.now())
+        .update({"status": "closed"}, synchronize_session="fetch")
     )
     if count:
         db.session.commit()
@@ -37,12 +36,11 @@ def list_sessions():
     # Auto-close any sessions that have ended
     close_past_sessions()
 
-    now = datetime.now(timezone.utc)
     sessions = (
         Session.query.filter_by(status="scheduled")
         .filter(
-            # Only show sessions that haven't started yet
-            Session.start_time > now
+            # Only show sessions that haven't ended yet
+            Session.end_time > db.func.now()
         )
         .filter(
             # Either the session has no linked class (one-off event)

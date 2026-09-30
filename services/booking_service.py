@@ -23,6 +23,13 @@ def create_booking(session_id: str, user=None, guest_info: dict | None = None) -
     if session.status != "scheduled":
         raise BookingError("This session is no longer available.", "session_unavailable")
 
+    # Reject bookings for sessions that have already started
+    if session.start_time.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
+        raise BookingError(
+            "Registration for this session has closed.",
+            "session_expired",
+        )
+
     # The capacity check happens here, server-side, against the live count —
     # never trust a disabled button on the frontend to have enforced this.
     if session.is_full:

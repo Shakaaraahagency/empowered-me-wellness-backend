@@ -155,6 +155,10 @@ def upload_session_image():
 @sessions_admin_bp.route("/sessions", methods=["GET"])
 @admin_required
 def list_sessions_admin():
+    # Auto-close any sessions that have ended
+    from routes.sessions import close_past_sessions
+    close_past_sessions()
+
     sessions = Session.query.order_by(Session.start_time.desc()).all()
     return jsonify([serialize_session(s, detail=True) for s in sessions]), 200
 

@@ -44,7 +44,7 @@ class Config:
     }
     # --- JWT ---
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
-    JWT_TOKEN_LOCATION = ["cookies"]
+    JWT_TOKEN_LOCATION = ["cookies", "headers"]
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=20)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)
     JWT_COOKIE_SECURE = os.environ.get("FLASK_ENV") == "production"

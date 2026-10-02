@@ -119,6 +119,8 @@ def login():
         "id": user.id, 
         "email": user.email, 
         "full_name": user.full_name,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
         "csrf_access": get_csrf_token(access_token),
         "csrf_refresh": get_csrf_token(refresh_token)
     })
@@ -150,6 +152,7 @@ def refresh():
     from flask_jwt_extended import get_csrf_token
     resp = jsonify({
         "refreshed": True,
+        "access_token": new_access,
         "csrf_access": get_csrf_token(new_access)
     })
     set_access_cookies(resp, new_access)
